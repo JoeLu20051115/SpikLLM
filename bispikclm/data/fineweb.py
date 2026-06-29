@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import tempfile
 
 from huggingface_hub import snapshot_download
 
@@ -49,8 +50,12 @@ def download_teachers() -> list[str]:
     return downloaded
 
 
-def prepare_dataset_manifests(output_dir: str | Path = "bispikclm/cache/datasets") -> Path:
-    target_dir = Path(output_dir)
+def default_dataset_manifest_dir() -> Path:
+    return Path(tempfile.gettempdir()) / "bispikclm-datasets"
+
+
+def prepare_dataset_manifests(output_dir: str | Path | None = None) -> Path:
+    target_dir = Path(output_dir) if output_dir is not None else default_dataset_manifest_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     for spec in DATASET_SPECS:
         slug = spec.repo_id.replace("/", "--")
@@ -61,4 +66,3 @@ def prepare_dataset_manifests(output_dir: str | Path = "bispikclm/cache/datasets
 
 def dataset_summary() -> list[dict[str, str | None]]:
     return [asdict(spec) for spec in DATASET_SPECS]
-

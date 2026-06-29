@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from bispikclm.models.bispik_config import BiSpikConfig
 from bispikclm.models.bispik_lm import BiSpikForCausalLM
 from bispikclm.train.eval_lm import main as eval_main
@@ -9,3 +11,4 @@ def test_scaffold_smoke() -> None:
 
     assert model.config.hidden_size == 16
     assert eval_main(["--smoke-datasets"]) == 0
+    assert not Path("bispikclm/cache").exists()
