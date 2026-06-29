@@ -40,3 +40,26 @@ Ran the full smoke scaffold file after the fix:
 
 ## Concerns
 - The per-layer spike statistics are intentionally minimal placeholders for Task 1. SFSA and SpAD-specific behavior remains out of scope until later tasks.
+
+## Review Fix Addendum
+
+### Findings Addressed
+- Removed the parallel `_BiSpikLayer` path from `bispikclm/models/bispik_model.py` and rebuilt the model stack on `BiSpikBlock.from_config(...)`.
+- Extended smoke coverage to exercise `labels`, `attention_mask`, `embedding_states`, and the `None` contract when optional outputs are not requested.
+
+### Red
+1. Extended `tests/smoke/test_scaffold.py` with:
+   - stronger forward-contract assertions in `test_lm_forward_returns_tensor_features`
+   - `test_lm_model_uses_bispik_block_stack`
+2. Ran the focused review-fix targets:
+   - Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py::test_lm_forward_returns_tensor_features tests/smoke/test_scaffold.py::test_lm_model_uses_bispik_block_stack -v`
+   - Result: `1 passed, 1 failed`
+   - Failure: `assert all(isinstance(layer, BiSpikBlock) for layer in model.model.layers)`
+3. This confirmed the Task 1 implementation was still bypassing the existing block scaffold.
+
+### Green
+1. Repaired `BiSpikAttention`, `BiSpikMLP`, and `BiSpikBlock` so the tensor-native path runs through the existing scaffold while preserving the legacy plain-`forward()` compatibility used by the smoke test.
+2. Rebuilt `BiSpikModel.layers` from `BiSpikBlock.from_config(...)` and kept the Task 1 output contract intact.
+3. Re-ran the focused smoke file:
+   - Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py -v`
+   - Result: `5 passed in 0.96s`
