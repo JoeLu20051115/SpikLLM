@@ -17,5 +17,6 @@ class BiSpikBlock:
     def forward(self, hidden_state: list[float]) -> list[float]:
         attended = self.attention.forward(hidden_state)
         transformed = self.mlp.forward(attended)
-        return [left + right for left, right in zip(hidden_state, transformed, strict=False)]
-
+        if len(hidden_state) != len(transformed):
+            raise ValueError("hidden_state and transformed outputs must have the same length")
+        return [left + right for left, right in zip(hidden_state, transformed, strict=True)]

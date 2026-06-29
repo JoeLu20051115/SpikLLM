@@ -9,6 +9,12 @@ class BiSpikConfig:
     num_attention_heads: int = 12
     num_hidden_layers: int = 12
     max_position_embeddings: int = 2048
+    pad_token_id: int = 1
+    bos_token_id: int = 2
+    eos_token_id: int = 2
+    num_steps: int = 4
+    spike_threshold: float = 1.0
+    tau: float = 0.9
+    membrane_decay: float = 0.9
     spike_surrogate: str = "arctan"
     teacher_model_id: str = "facebook/opt-125m"
-
