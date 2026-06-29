@@ -19,14 +19,32 @@ def test_scaffold_smoke() -> None:
     assert not Path("bispikclm/cache").exists()
 
 
-def test_lm_forward_returns_vocab_sized_logits() -> None:
-    config = BiSpikConfig(vocab_size=6, hidden_size=4, num_hidden_layers=1)
+def test_lm_forward_returns_tensor_features() -> None:
+    import torch
+
+    config = BiSpikConfig(
+        vocab_size=32,
+        hidden_size=16,
+        intermediate_size=32,
+        num_attention_heads=4,
+        num_hidden_layers=2,
+        max_position_embeddings=16,
+        num_steps=2,
+    )
     model = BiSpikForCausalLM(config)
+    input_ids = torch.randint(0, config.vocab_size, (2, 8))
 
-    output = model.forward([1.0, 2.0, 3.0, 4.0])
+    output = model(
+        input_ids=input_ids,
+        output_hidden_states=True,
+        output_attentions=True,
+        return_spike_stats=True,
+    )
 
-    assert len(output["logits"]) == config.vocab_size
-    assert output["logits"][-2:] == [0.0, 0.0]
+    assert output["logits"].shape == (2, 8, config.vocab_size)
+    assert len(output["hidden_states"]) == config.num_hidden_layers + 1
+    assert len(output["attentions"]) == config.num_hidden_layers
+    assert len(output["spike_stats"]) == config.num_hidden_layers
 
 
 def test_block_forward_rejects_shape_mismatch() -> None:

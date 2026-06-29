@@ -1,34 +1,68 @@
-from dataclasses import dataclass, field
-from typing import Any
+from __future__ import annotations
+
+try:
+    import torch
+    import torch.nn.functional as F
+    from torch import nn
+except ImportError:  # pragma: no cover - optional runtime dependency
+    torch = None
+    F = None
+    nn = None
 
 from .bispik_config import BiSpikConfig
 from .bispik_model import BiSpikModel
 
-try:
-    import torch
-    from torch import nn
-except ImportError:  # pragma: no cover - optional runtime dependency
-    torch = None
-    nn = None
 
+if nn is None:  # pragma: no cover - import-time fallback when torch is unavailable
+    class BiSpikForCausalLM:  # type: ignore[no-redef]
+        def __init__(self, config: BiSpikConfig) -> None:
+            self.config = config
+            self.model = BiSpikModel(config)
 
-@dataclass(slots=True)
-class BiSpikForCausalLM:
-    config: BiSpikConfig
-    model: BiSpikModel = field(init=False)
-    lm_head: Any = field(init=False, default=None)
+        def forward(self, *args, **kwargs):
+            raise ImportError("BiSpikForCausalLM requires torch to be installed")
 
-    def __post_init__(self) -> None:
-        self.model = BiSpikModel(self.config)
-        if nn is not None:
-            self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False)
+else:
+    class BiSpikForCausalLM(nn.Module):  # type: ignore[no-redef]
+        def __init__(self, config: BiSpikConfig) -> None:
+            super().__init__()
+            self.config = config
+            self.model = BiSpikModel(config)
+            self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-    def forward(self, token_values: list[float]) -> dict[str, list[float]]:
-        hidden_state = self.model.forward(token_values)
-        if torch is not None and isinstance(hidden_state, torch.Tensor):
-            logits = self.lm_head(hidden_state)
-            return {"logits": logits}
-        logits = hidden_state[: self.config.vocab_size]
-        if len(logits) < self.config.vocab_size:
-            logits = logits + [0.0] * (self.config.vocab_size - len(logits))
-        return {"logits": logits}
+        def forward(
+            self,
+            input_ids: torch.Tensor,
+            attention_mask: torch.Tensor | None = None,
+            labels: torch.Tensor | None = None,
+            output_hidden_states: bool = False,
+            output_attentions: bool = False,
+            return_spike_stats: bool = False,
+        ) -> dict[str, torch.Tensor | tuple[torch.Tensor, ...] | list[dict[str, torch.Tensor]] | None]:
+            model_output = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_hidden_states=output_hidden_states,
+                output_attentions=output_attentions,
+                return_spike_stats=return_spike_stats,
+            )
+            last_hidden_state = model_output["last_hidden_state"]
+            assert isinstance(last_hidden_state, torch.Tensor)
+            logits = self.lm_head(last_hidden_state)
+            loss = None
+            if labels is not None:
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                loss = F.cross_entropy(
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    shift_labels.reshape(-1),
+                    ignore_index=-100,
+                )
+            return {
+                "logits": logits,
+                "hidden_states": model_output.get("hidden_states"),
+                "attentions": model_output.get("attentions"),
+                "spike_stats": model_output.get("spike_stats"),
+                "embedding_states": model_output.get("embedding_states"),
+                "loss": loss,
+            }
