@@ -2,10 +2,11 @@ import argparse
 import json
 
 from bispikclm.data.fineweb import dataset_smoke_check, dataset_summary, prepare_dataset_manifests
+from bispikclm.distill.spad import SpADConfig, summarize_plan
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Bootstrap LM evaluation entrypoint.")
+    parser = argparse.ArgumentParser(description="LM evaluation entrypoint for BiSpikCLM dry runs.")
     parser.add_argument("--smoke-datasets", action="store_true", help="Validate dataset registry and manifest generation.")
     return parser
 
@@ -18,6 +19,7 @@ def main(argv: list[str] | None = None) -> int:
             "summary": dataset_smoke_check(),
             "datasets": dataset_summary(),
             "manifest_dir": str(manifest_dir),
+            "distillation": summarize_plan(SpADConfig()),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
