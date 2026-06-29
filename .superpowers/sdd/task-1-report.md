@@ -63,3 +63,33 @@ Ran the full smoke scaffold file after the fix:
 3. Re-ran the focused smoke file:
    - Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py -v`
    - Result: `5 passed in 0.96s`
+
+
+## Final Rereview Fix Addendum
+
+### Findings Addressed
+- Made the tensor attention path causal while retaining the optional key padding mask.
+- Updated LM loss masking so shifted labels at masked positions are ignored.
+- Added focused smoke regressions that fail without those two behaviors.
+
+### Red
+1. Extended `tests/smoke/test_scaffold.py` with:
+   - `test_attention_is_causal_and_respects_padding_mask`
+   - `test_lm_loss_ignores_masked_positions`
+2. Ran the focused rereview targets:
+   - Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py::test_attention_is_causal_and_respects_padding_mask tests/smoke/test_scaffold.py::test_lm_loss_ignores_masked_positions -v`
+   - Result: `2 failed`
+   - Failures:
+     - future-position attention weights were non-zero above the causal diagonal
+     - `output["loss"]` did not match the mask-filtered expected LM loss
+
+### Green
+1. Added a lower-triangular causal score mask in `bispikclm/models/bispik_attention.py` before applying the optional padding mask.
+2. Applied `attention_mask[..., 1:]` to shifted labels in `bispikclm/models/bispik_lm.py` before cross-entropy.
+3. Re-ran the focused rereview targets:
+   - Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py::test_attention_is_causal_and_respects_padding_mask tests/smoke/test_scaffold.py::test_lm_loss_ignores_masked_positions -v`
+   - Result: `2 passed in 0.93s`
+
+### Verification
+- Command: `/mnt/data3/data_xingrui/miniforge3/bin/python -m pytest tests/smoke/test_scaffold.py -v`
+- Result: `7 passed in 0.96s`

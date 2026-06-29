@@ -56,6 +56,13 @@ else:
                 value = self.v_proj(hidden_state)
                 scale = max(query.shape[-1], 1) ** -0.5
                 scores = torch.matmul(query, key.transpose(-1, -2)) * scale
+                sequence_length = hidden_state.shape[-2]
+                causal_mask = torch.ones(
+                    (sequence_length, sequence_length),
+                    dtype=torch.bool,
+                    device=hidden_state.device,
+                ).tril()
+                scores = scores.masked_fill(~causal_mask.unsqueeze(0), torch.finfo(scores.dtype).min)
                 if attention_mask is not None:
                     key_mask = attention_mask[:, None, :].to(dtype=torch.bool, device=hidden_state.device)
                     scores = scores.masked_fill(~key_mask, torch.finfo(scores.dtype).min)

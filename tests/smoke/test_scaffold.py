@@ -63,6 +63,66 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert minimal_output["spike_stats"] is None
 
 
+def test_attention_is_causal_and_respects_padding_mask() -> None:
+    import torch
+
+    config = BiSpikConfig(hidden_size=2, num_attention_heads=1)
+    attention = BiSpikAttention(config)
+    with torch.no_grad():
+        for projection in (attention.q_proj, attention.k_proj, attention.v_proj, attention.out_proj):
+            projection.weight.copy_(torch.eye(config.hidden_size))
+
+    hidden_state = torch.tensor([[[1.0, 0.0], [0.0, 1.0], [5.0, 0.0]]])
+    _, causal_weights = attention(hidden_state, return_weights=True)
+    _, masked_weights = attention(
+        hidden_state,
+        attention_mask=torch.tensor([[1, 0, 1]], dtype=torch.long),
+        return_weights=True,
+    )
+
+    assert causal_weights is not None
+    assert masked_weights is not None
+    assert torch.allclose(causal_weights[0].triu(diagonal=1), torch.zeros_like(causal_weights[0].triu(diagonal=1)))
+    assert torch.allclose(masked_weights[0, :, 1], torch.zeros_like(masked_weights[0, :, 1]))
+
+
+def test_lm_loss_ignores_masked_positions() -> None:
+    import torch
+    import torch.nn.functional as F
+
+    config = BiSpikConfig(
+        vocab_size=32,
+        hidden_size=16,
+        intermediate_size=32,
+        num_attention_heads=4,
+        num_hidden_layers=2,
+        max_position_embeddings=16,
+        num_steps=2,
+    )
+    model = BiSpikForCausalLM(config)
+    input_ids = torch.tensor([[1, 2, 3, 4, 5]])
+    attention_mask = torch.tensor([[1, 1, 1, 0, 0]], dtype=torch.long)
+
+    output = model(input_ids=input_ids, attention_mask=attention_mask, labels=input_ids)
+    shift_logits = output["logits"][..., :-1, :].contiguous()
+    shift_labels = input_ids[..., 1:].contiguous()
+    shift_mask = attention_mask[..., 1:].contiguous().to(dtype=torch.bool)
+    expected_loss = F.cross_entropy(
+        shift_logits.view(-1, shift_logits.size(-1)),
+        shift_labels.masked_fill(~shift_mask, -100).reshape(-1),
+        ignore_index=-100,
+    )
+    unmasked_loss = F.cross_entropy(
+        shift_logits.view(-1, shift_logits.size(-1)),
+        shift_labels.reshape(-1),
+        ignore_index=-100,
+    )
+
+    assert output["loss"] is not None
+    assert torch.isclose(output["loss"], expected_loss)
+    assert not torch.isclose(output["loss"], unmasked_loss)
+
+
 def test_lm_model_uses_bispik_block_stack() -> None:
     config = BiSpikConfig(hidden_size=16, intermediate_size=32, num_hidden_layers=2)
     model = BiSpikForCausalLM(config)

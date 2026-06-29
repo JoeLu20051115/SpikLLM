@@ -53,6 +53,9 @@ else:
             if labels is not None:
                 shift_logits = logits[..., :-1, :].contiguous()
                 shift_labels = labels[..., 1:].contiguous()
+                if attention_mask is not None:
+                    shift_mask = attention_mask[..., 1:].contiguous().to(dtype=torch.bool)
+                    shift_labels = shift_labels.masked_fill(~shift_mask, -100)
                 loss = F.cross_entropy(
                     shift_logits.view(-1, shift_logits.size(-1)),
                     shift_labels.reshape(-1),
