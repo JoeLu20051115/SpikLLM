@@ -52,6 +52,7 @@ else:
                 base_embedding = base_embedding * attention_mask.unsqueeze(-1).to(base_embedding.dtype)
 
             step_embeddings = []
+            step_last_hidden_states = []
             step_hidden_states = [] if output_hidden_states else None
             step_attentions = [] if output_attentions else None
             step_spike_stats = [] if return_spike_stats else None
@@ -85,6 +86,7 @@ else:
                         spike_stats.append(layer_spike_stats)
 
                 step_embeddings.append(base_embedding)
+                step_last_hidden_states.append(hidden_state)
                 if step_hidden_states is not None:
                     step_hidden_states.append(tuple(hidden_states))
                 if step_attentions is not None:
@@ -92,7 +94,7 @@ else:
                 if step_spike_stats is not None:
                     step_spike_stats.append(spike_stats)
 
-            hidden_state = torch.stack([states[-1] for states in step_hidden_states], dim=0).mean(dim=0) if step_hidden_states is not None else hidden_state
+            hidden_state = torch.stack(step_last_hidden_states, dim=0).mean(dim=0)
             embedding_states = torch.stack(step_embeddings, dim=0)
             hidden_states = (
                 tuple(torch.stack([step[layer_idx] for step in step_hidden_states], dim=0) for layer_idx in range(len(step_hidden_states[0])))
