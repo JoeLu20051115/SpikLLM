@@ -509,6 +509,54 @@ def test_lm_monitoring_metrics_include_logit_scale_and_valid_tokens() -> None:
     assert "train/logit_std" in metrics
 
 
+def test_lm_monitoring_metrics_report_alignment_diagnostics() -> None:
+    import torch
+
+    from bispikclm.train.train_spad import compute_lm_monitoring_metrics
+
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 3.0, 1.0, 2.0],
+                [4.0, 1.0, 3.0, 2.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ]
+        ]
+    )
+    teacher_logits = torch.tensor(
+        [
+            [
+                [0.0, 5.0, 1.0, 2.0],
+                [6.0, 1.0, 2.0, 3.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ]
+        ]
+    )
+    labels = torch.tensor([[0, 1, 2]])
+    attention_mask = torch.ones_like(labels)
+    hidden_state = torch.tensor([[[1.0, 2.0], [3.0, 5.0], [0.0, 0.0]]])
+    spike_stats = [{"spike_rate": torch.tensor(0.25)}, {"spike_rate": torch.tensor(0.75)}]
+
+    metrics = compute_lm_monitoring_metrics(
+        logits,
+        labels,
+        attention_mask,
+        torch.tensor(2.0),
+        teacher_logits=teacher_logits,
+        hidden_state=hidden_state,
+        spike_stats=spike_stats,
+        readout_scale=torch.tensor(2.0),
+    )
+
+    assert metrics["train/target_rank_mean"] == 1.5
+    assert metrics["train/target_margin_mean"] == 0.0
+    assert metrics["train/top5_accuracy"] == 1.0
+    assert metrics["train/teacher_top1_agreement"] == 1.0
+    assert metrics["train/spike_rate_mean"] == 0.5
+    assert metrics["train/readout_scale"] == 2.0
+    assert "train/hidden_std" in metrics
+
+
 def test_freeze_teacher_disables_gradients() -> None:
     import torch
 

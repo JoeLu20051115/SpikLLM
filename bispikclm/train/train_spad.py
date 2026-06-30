@@ -207,6 +207,11 @@ def compute_lm_monitoring_metrics(
     labels: torch.Tensor,
     attention_mask: torch.Tensor | None,
     hard_loss: torch.Tensor,
+    *,
+    teacher_logits: torch.Tensor | None = None,
+    hidden_state: torch.Tensor | None = None,
+    spike_stats: list[dict[str, torch.Tensor]] | None = None,
+    readout_scale: torch.Tensor | float | None = None,
 ) -> dict[str, float]:
     with torch.no_grad():
         shift_logits = logits[..., :-1, :]
@@ -218,6 +223,17 @@ def compute_lm_monitoring_metrics(
             detached_logits = shift_logits.detach()
             predictions = detached_logits.argmax(dim=-1)
             accuracy = predictions.eq(shift_labels).masked_select(valid).float().mean()
+            safe_labels = shift_labels.masked_fill(~valid, 0)
+            target_logits = detached_logits.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1)
+            non_target_logits = detached_logits.masked_fill(
+                torch.nn.functional.one_hot(safe_labels, detached_logits.shape[-1]).to(dtype=torch.bool),
+                float("-inf"),
+            )
+            target_margins = target_logits - non_target_logits.amax(dim=-1)
+            target_ranks = detached_logits.gt(target_logits.unsqueeze(-1)).sum(dim=-1).add(1)
+            top_k = min(5, detached_logits.shape[-1])
+            topk_predictions = detached_logits.topk(k=top_k, dim=-1).indices
+            top5_accuracy = topk_predictions.eq(safe_labels.unsqueeze(-1)).any(dim=-1).masked_select(valid).float().mean()
             logit_values = detached_logits.float()
             valid_float = valid.unsqueeze(-1).to(dtype=logit_values.dtype)
             value_count = valid.sum().to(dtype=logit_values.dtype) * logit_values.shape[-1]
@@ -227,21 +243,56 @@ def compute_lm_monitoring_metrics(
             logit_std = (centered.square().sum() / value_count.clamp_min(1.0)).sqrt()
             logit_abs_max = logit_values.abs().masked_fill(~valid.unsqueeze(-1), 0.0).max()
             valid_tokens = valid.sum().detach().float()
+            target_rank_mean = target_ranks.masked_select(valid).float().mean()
+            target_margin_mean = target_margins.masked_select(valid).float().mean()
         else:
             accuracy = hard_loss.new_zeros(())
+            top5_accuracy = hard_loss.new_zeros(())
             logit_mean = hard_loss.new_zeros(())
             logit_std = hard_loss.new_zeros(())
             logit_abs_max = hard_loss.new_zeros(())
             valid_tokens = hard_loss.new_zeros(())
+            target_rank_mean = hard_loss.new_zeros(())
+            target_margin_mean = hard_loss.new_zeros(())
         perplexity = torch.exp(hard_loss.detach().float().clamp(max=50.0))
-        return {
+        metrics = {
             "train/token_accuracy": float(accuracy.detach().cpu()),
+            "train/top5_accuracy": float(top5_accuracy.detach().cpu()),
             "train/perplexity": float(perplexity.detach().cpu()),
             "train/logit_mean": float(logit_mean.detach().cpu()),
             "train/logit_std": float(logit_std.detach().cpu()),
             "train/logit_abs_max": float(logit_abs_max.detach().cpu()),
             "train/valid_tokens": float(valid_tokens.detach().cpu()),
+            "train/target_rank_mean": float(target_rank_mean.detach().cpu()),
+            "train/target_margin_mean": float(target_margin_mean.detach().cpu()),
         }
+        if teacher_logits is not None and valid.any():
+            teacher_shift_logits = teacher_logits[..., :-1, : detached_logits.shape[-1]]
+            teacher_predictions = teacher_shift_logits.detach().argmax(dim=-1)
+            agreement = predictions.eq(teacher_predictions).masked_select(valid).float().mean()
+            metrics["train/teacher_top1_agreement"] = float(agreement.detach().cpu())
+        if hidden_state is not None and valid.any():
+            hidden_shift = hidden_state[..., :-1, :].detach().float()
+            hidden_valid = valid.unsqueeze(-1)
+            hidden_values = hidden_shift.masked_select(hidden_valid)
+            if hidden_values.numel() > 0:
+                metrics["train/hidden_std"] = float(hidden_values.std(unbiased=False).detach().cpu())
+                metrics["train/hidden_abs_mean"] = float(hidden_values.abs().mean().detach().cpu())
+        if spike_stats:
+            spike_rates = [
+                stats["spike_rate"].detach().float()
+                for stats in spike_stats
+                if stats is not None and "spike_rate" in stats
+            ]
+            if spike_rates:
+                metrics["train/spike_rate_mean"] = float(torch.stack(spike_rates).mean().detach().cpu())
+        if readout_scale is not None:
+            if isinstance(readout_scale, torch.Tensor):
+                readout_value = readout_scale.detach().float()
+            else:
+                readout_value = torch.tensor(float(readout_scale), device=hard_loss.device)
+            metrics["train/readout_scale"] = float(readout_value.detach().cpu())
+        return metrics
 
 
 def average_loss_snapshots(snapshots: list[dict[str, float]]) -> dict[str, float]:
@@ -408,12 +459,32 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
             (losses["total_loss"] / config.training.gradient_accumulation_steps).backward()
             if (batch_index + 1) % config.training.gradient_accumulation_steps == 0:
                 should_log = local_rank == 0 and wandb_run is not None and (step + 1) % config.training.log_interval == 0
+                student_hidden_for_monitoring = None
+                student_hidden_states = student_outputs.get("hidden_states")
+                if isinstance(student_hidden_states, tuple) and student_hidden_states:
+                    last_student_hidden = student_hidden_states[-1]
+                    if isinstance(last_student_hidden, torch.Tensor):
+                        student_hidden_for_monitoring = (
+                            last_student_hidden.mean(dim=0)
+                            if last_student_hidden.ndim == 4
+                            else last_student_hidden
+                        )
+                target_student = student.module if hasattr(student, "module") else student
+                readout_scale = (
+                    target_student.readout_log_scale.exp()
+                    if hasattr(target_student, "readout_log_scale")
+                    else None
+                )
                 monitoring_metrics = (
                     compute_lm_monitoring_metrics(
                         logits=student_outputs["logits"],
                         labels=batch["labels"],
                         attention_mask=batch.get("attention_mask"),
                         hard_loss=losses["hard_loss"],
+                        teacher_logits=teacher_outputs["logits"],
+                        hidden_state=student_hidden_for_monitoring,
+                        spike_stats=student_outputs.get("spike_stats"),
+                        readout_scale=readout_scale,
                     )
                     if should_log
                     else {}
