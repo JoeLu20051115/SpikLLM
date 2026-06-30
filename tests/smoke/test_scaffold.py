@@ -7,7 +7,7 @@ from bispikclm.models.bispik_block import BiSpikBlock
 from bispikclm.models.bispik_config import BiSpikConfig
 from bispikclm.models.bispik_lm import BiSpikForCausalLM
 from bispikclm.train.eval_lm import main as eval_main
-from bispikclm.train.train_spad import build_training_payload
+from bispikclm.train.train_spad import build_training_payload, freeze_teacher
 
 
 def test_scaffold_smoke() -> None:
@@ -183,6 +183,8 @@ def test_training_payload_exposes_teacher_and_multilevel_spad_plan() -> None:
     assert "distillation" in serialized
     assert serialized["distillation"]["loss_terms"] == ["EA", "SAA", "SFA", "STA", "HTA"]
     assert "train_loop" in serialized
+    assert serialized["train_loop"]["optimizer"] == "torch.optim.Adam"
+    assert serialized["train_loop"]["scheduler"] == "cosine_decay"
     assert "runtime_requirements" in serialized
 
 
@@ -216,3 +218,23 @@ def test_spad_five_loss_backward_with_temporal_fusion() -> None:
     assert set(losses) >= {"embedding_loss", "attention_loss", "feature_loss", "soft_loss", "hard_loss", "total_loss"}
     assert losses["total_loss"].ndim == 0
     assert student_outputs["logits"].grad is not None
+
+
+def test_freeze_teacher_disables_gradients() -> None:
+    import torch
+
+    teacher = torch.nn.Linear(4, 4)
+
+    frozen = freeze_teacher(teacher)
+
+    assert not frozen.training
+    assert all(not parameter.requires_grad for parameter in frozen.parameters())
+
+
+def test_readme_training_command_matches_cli() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "python -m bispikclm.train.train_spad" in readme
+    assert "--teacher-model" in readme
+    assert "--dummy-batch" in readme
+    assert "scripts/run_sft.sh" in readme

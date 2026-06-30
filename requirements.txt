@@ -1,4 +1,6 @@
-huggingface_hub>=0.24
+datasets>=2.20
+huggingface_hub>=0.24,<1.0
 pytest>=8
+spikingjelly>=0.0.0.0.14
 torch>=2.4
 transformers>=4.44

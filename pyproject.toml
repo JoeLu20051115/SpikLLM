@@ -9,7 +9,8 @@ description = "BiSpikCLM prelaunch training utilities for spike-aware distillati
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "huggingface_hub>=0.24",
+  "datasets>=2.20",
+  "huggingface_hub>=0.24,<1.0",
   "spikingjelly>=0.0.0.0.14",
   "torch>=2.4",
   "transformers>=4.44",
