@@ -102,6 +102,22 @@ def _rate_encode(tensor: torch.Tensor, threshold: float, membrane_decay: float) 
     return torch.stack(spikes, dim=0).mean(dim=0)
 
 
+def _attention_rate_drive(attention: torch.Tensor, threshold: float) -> torch.Tensor:
+    row_max = attention.amax(dim=-1, keepdim=True)
+    return attention / row_max.clamp_min(1e-6) * threshold
+
+
+def _attention_distribution(attention: torch.Tensor) -> torch.Tensor:
+    row_sum = attention.sum(dim=-1, keepdim=True)
+    return attention / row_sum.clamp_min(1e-6)
+
+
+def _attention_distribution_mse(student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
+    student_distribution = _attention_distribution(student)
+    teacher_distribution = _attention_distribution(teacher)
+    return (student_distribution - teacher_distribution).square().sum(dim=-1).mean()
+
+
 def _project_if_needed(projector: SpADProjector | None, tensor: torch.Tensor) -> torch.Tensor:
     return projector(tensor) if projector is not None else tensor
 
@@ -148,13 +164,13 @@ def compute_multilevel_distillation(
         teacher_attention = teacher_attention.detach()
         student_attention, teacher_attention = _align_attention(student_attention, teacher_attention)
         teacher_rate = _rate_encode(
-            _replicate_teacher(teacher_attention, student_attention_steps.shape[0]),
+            _replicate_teacher(_attention_rate_drive(teacher_attention, spike_threshold), student_attention_steps.shape[0]),
             spike_threshold,
             membrane_decay,
         )
         student_rate, teacher_rate = _align_attention(student_attention, teacher_rate)
-        attention_rate_losses.append(F.mse_loss(student_rate, teacher_rate))
-        attention_mse_losses.append(F.mse_loss(student_attention, teacher_attention))
+        attention_rate_losses.append(_attention_distribution_mse(student_rate, teacher_rate))
+        attention_mse_losses.append(_attention_distribution_mse(student_attention, teacher_attention))
     attention_rate_loss = torch.stack(attention_rate_losses).mean()
     attention_mse_loss = torch.stack(attention_mse_losses).mean()
     attn_loss = config.gamma_attn * attention_rate_loss + (1.0 - config.gamma_attn) * attention_mse_loss

@@ -183,3 +183,40 @@ def test_spad_attention_and_feature_losses_include_rate_mse_branches() -> None:
     assert "feature_mse_loss" in losses
     losses["total_loss"].backward()
     assert student_outputs["logits"].grad is not None
+
+
+def test_spad_attention_loss_penalizes_zero_student_attention_distribution() -> None:
+    import torch
+
+    from bispikclm.distill.spad import SpADConfig, compute_multilevel_distillation
+
+    batch_size = 1
+    heads = 2
+    sequence_length = 64
+    hidden_size = 8
+    vocab_size = 16
+    teacher_attention = torch.tril(torch.ones(sequence_length, sequence_length))
+    teacher_attention = teacher_attention / teacher_attention.sum(dim=-1, keepdim=True)
+    student_attention = torch.zeros(2, batch_size, heads, sequence_length, sequence_length, requires_grad=True)
+    student_outputs = {
+        "embedding_states": torch.zeros(2, batch_size, sequence_length, hidden_size, requires_grad=True),
+        "hidden_states": (torch.zeros(2, batch_size, sequence_length, hidden_size, requires_grad=True),),
+        "attentions": (student_attention,),
+        "logits": torch.zeros(batch_size, sequence_length, vocab_size, requires_grad=True),
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.zeros(batch_size, sequence_length, hidden_size),),
+        "attentions": (teacher_attention.expand(batch_size, heads, sequence_length, sequence_length),),
+        "logits": torch.zeros(batch_size, sequence_length, vocab_size),
+    }
+
+    losses = compute_multilevel_distillation(
+        student_outputs=student_outputs,
+        teacher_outputs=teacher_outputs,
+        config=SpADConfig(),
+        labels=torch.zeros(batch_size, sequence_length, dtype=torch.long),
+        spike_threshold=1.0,
+        membrane_decay=0.9,
+    )
+
+    assert losses["attention_loss"] > 0.05
