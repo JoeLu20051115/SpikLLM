@@ -26,7 +26,7 @@ else:
         def __init__(self, config: BiSpikConfig) -> None:
             super().__init__()
             self.config = config
-            self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size)
+            self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
             self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.layers = nn.ModuleList(
                 BiSpikBlock.from_config(config) for _ in range(config.num_hidden_layers)
