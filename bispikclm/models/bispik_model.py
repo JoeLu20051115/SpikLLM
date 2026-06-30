@@ -86,7 +86,7 @@ else:
                     if spike_stats is not None:
                         spike_stats.append(layer_spike_stats)
 
-                step_embeddings.append(base_embedding)
+                step_embeddings.append(hidden_states[0] if hidden_states is not None else base_embedding * step_scale)
                 step_last_hidden_states.append(hidden_state)
                 if step_hidden_states is not None:
                     step_hidden_states.append(tuple(hidden_states))
