@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-from bispikclm.distill.spad import SpADConfig
+from bispikclm.distill.spad import SpADConfig, SpADProjector, compute_multilevel_distillation
 from bispikclm.models.bispik_attention import BiSpikAttention
 from bispikclm.models.bispik_block import BiSpikBlock
 from bispikclm.models.bispik_config import BiSpikConfig
@@ -181,6 +181,38 @@ def test_training_payload_exposes_teacher_and_multilevel_spad_plan() -> None:
 
     assert "teacher_runtime" in serialized
     assert "distillation" in serialized
-    assert "reference_losses" in serialized["distillation"]
+    assert serialized["distillation"]["loss_terms"] == ["EA", "SAA", "SFA", "STA", "HTA"]
     assert "train_loop" in serialized
     assert "runtime_requirements" in serialized
+
+
+def test_spad_five_loss_backward_with_temporal_fusion() -> None:
+    import torch
+
+    config = SpADConfig()
+    student_outputs = {
+        "embedding_states": torch.randn(2, 2, 4, 8, requires_grad=True),
+        "hidden_states": (torch.randn(2, 2, 4, 8, requires_grad=True), torch.randn(2, 2, 4, 8, requires_grad=True)),
+        "attentions": (torch.randint(0, 2, (2, 2, 2, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": torch.randn(2, 4, 16, requires_grad=True),
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(2, 4, 12), torch.randn(2, 4, 12)),
+        "attentions": (torch.rand(2, 2, 4, 4),),
+        "logits": torch.randn(2, 4, 16),
+    }
+    labels = torch.randint(0, 16, (2, 4))
+
+    losses = compute_multilevel_distillation(
+        student_outputs=student_outputs,
+        teacher_outputs=teacher_outputs,
+        config=config,
+        labels=labels,
+        embedding_projector=SpADProjector(8, 12),
+        hidden_projector=SpADProjector(8, 12),
+    )
+    losses["total_loss"].backward()
+
+    assert set(losses) >= {"embedding_loss", "attention_loss", "feature_loss", "soft_loss", "hard_loss", "total_loss"}
+    assert losses["total_loss"].ndim == 0
+    assert student_outputs["logits"].grad is not None

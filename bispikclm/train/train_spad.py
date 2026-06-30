@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 import json
 
 from bispikclm.data.fineweb import download_teachers, prepare_dataset_manifests
-from bispikclm.distill.spad import SpADConfig, compute_multilevel_distillation, summarize_plan
+from bispikclm.distill.spad import SpADConfig, summarize_plan
 from bispikclm.models import BiSpikConfig
 
 try:
@@ -56,21 +56,6 @@ def build_training_payload(config: BiSpikConfig, distill_config: SpADConfig) -> 
             "transformers_available": AutoModelForCausalLM is not None,
         },
     }
-    payload["example_loss"] = compute_multilevel_distillation(
-        student_states={
-            "embedding": [0.0, 0.1],
-            "attention": [0.1, 0.0],
-            "hidden": [0.2, 0.1],
-            "logit": [0.45, 0.55],
-        },
-        teacher_states={
-            "embedding": [0.0, 0.0],
-            "attention": [0.0, 0.0],
-            "hidden": [0.1, 0.1],
-            "logit": [0.5, 0.5],
-        },
-        config=distill_config,
-    )
     return payload
 
 
