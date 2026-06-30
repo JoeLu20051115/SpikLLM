@@ -11,7 +11,7 @@ from bispikclm.train.train_spad import build_training_payload
 
 
 def test_scaffold_smoke() -> None:
-    config = BiSpikConfig(vocab_size=64, hidden_size=16, num_hidden_layers=2)
+    config = BiSpikConfig(vocab_size=64, hidden_size=16, num_attention_heads=4, num_hidden_layers=2)
     model = BiSpikForCausalLM(config)
 
     assert model.config.hidden_size == 16
@@ -61,6 +61,30 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert minimal_output["hidden_states"] is None
     assert minimal_output["attentions"] is None
     assert minimal_output["spike_stats"] is None
+
+
+def test_attention_path_is_tensor_native_and_softmax_free() -> None:
+    import torch
+
+    config = BiSpikConfig(hidden_size=16, num_attention_heads=4, num_steps=2)
+    attention = BiSpikAttention(config)
+    hidden_state = torch.randn(2, 8, 16)
+
+    original_softmax = torch.softmax
+
+    def fail_softmax(*args, **kwargs):
+        raise AssertionError("BiSpikAttention must not call torch.softmax")
+
+    torch.softmax = fail_softmax
+    try:
+        output = attention(hidden_state)
+    finally:
+        torch.softmax = original_softmax
+
+    assert output["context"].shape == hidden_state.shape
+    assert output["attention_scores"].shape == (2, config.num_attention_heads, 8, 8)
+    assert output["attention_spikes"].shape == output["attention_scores"].shape
+    assert torch.isfinite(output["context"]).all()
 
 
 def test_attention_is_causal_and_respects_padding_mask() -> None:
@@ -124,7 +148,7 @@ def test_lm_loss_ignores_masked_positions() -> None:
 
 
 def test_lm_model_uses_bispik_block_stack() -> None:
-    config = BiSpikConfig(hidden_size=16, intermediate_size=32, num_hidden_layers=2)
+    config = BiSpikConfig(hidden_size=16, intermediate_size=32, num_attention_heads=4, num_hidden_layers=2)
     model = BiSpikForCausalLM(config)
 
     assert len(model.model.layers) == config.num_hidden_layers
@@ -136,7 +160,7 @@ def test_block_forward_rejects_shape_mismatch() -> None:
         def forward(self, hidden_state: list[float]) -> list[float]:
             return hidden_state[:-1]
 
-    config = BiSpikConfig(hidden_size=4)
+    config = BiSpikConfig(hidden_size=4, num_attention_heads=1)
     block = BiSpikBlock(attention=BiSpikAttention(config), mlp=ShortMLP())
 
     try:
