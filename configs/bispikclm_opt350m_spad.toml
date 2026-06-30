@@ -14,6 +14,7 @@ tau = 0.9
 membrane_decay = 0.9
 spike_surrogate = "arctan"
 surrogate_alpha = 2.0
+readout_scale = 2.0
 teacher_model_id = "facebook/opt-350m"
 
 [distillation]
@@ -37,7 +38,7 @@ target_tokens = 1000000000
 warmup_ratio = 0.2
 gradient_clip = 0.7
 sequence_length = 2048
-time_steps = 4
+time_steps = 2
 num_workers = 0
 checkpoint_interval = 1000
 precision = "bf16"

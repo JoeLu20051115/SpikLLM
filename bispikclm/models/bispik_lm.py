@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 try:
     import torch
     import torch.nn.functional as F
@@ -31,6 +33,9 @@ else:
             self.final_layer_norm = nn.LayerNorm(config.hidden_size)
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
             self.lm_head.weight = self.model.token_embedding.weight
+            self.readout_log_scale = nn.Parameter(
+                torch.tensor(math.log(max(config.readout_scale, 1e-6)), dtype=torch.float32)
+            )
 
         def forward(
             self,
@@ -50,7 +55,7 @@ else:
             )
             last_hidden_state = model_output["last_hidden_state"]
             assert isinstance(last_hidden_state, torch.Tensor)
-            logits = self.lm_head(self.final_layer_norm(last_hidden_state))
+            logits = self.lm_head(self.final_layer_norm(last_hidden_state)) * self.readout_log_scale.exp()
             loss = None
             if labels is not None:
                 shift_logits = logits[..., :-1, :].contiguous()

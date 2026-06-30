@@ -28,6 +28,7 @@ def test_table3_config_file_is_loaded_and_propagated() -> None:
     assert config.distillation.lambda_emb == 0.2
     assert config.model.spike_threshold == 0.7
     assert config.model.surrogate_alpha == 2.0
+    assert config.model.readout_scale == 2.0
     assert config.training.time_steps in (2, 4)
     assert config.training.target_tokens == 1_000_000_000
 
@@ -52,6 +53,7 @@ def test_three_opt_scale_configs_are_ready_for_training() -> None:
         assert config.training.warmup_ratio == 0.2
         assert config.training.gradient_clip == 0.7
         assert config.model.spike_threshold == 0.7
+        assert config.model.readout_scale == 2.0
         assert resolve_max_steps(config.training, world_size=8) == 239
 
 
@@ -63,6 +65,42 @@ def test_lm_head_is_tied_to_token_embedding_for_opt_parameter_budget() -> None:
 
     assert model.lm_head.weight.data_ptr() == model.model.token_embedding.weight.data_ptr()
     assert 120_000_000 <= parameter_count <= 130_000_000
+
+
+def test_lm_head_applies_configured_readout_scale() -> None:
+    import torch
+
+    from bispikclm.models import BiSpikConfig, BiSpikForCausalLM
+
+    torch.manual_seed(0)
+    input_ids = torch.tensor([[2, 3, 4, 5]])
+    base_config = BiSpikConfig(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=16,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=8,
+        readout_scale=1.0,
+    )
+    scaled_config = BiSpikConfig(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=16,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=8,
+        readout_scale=2.0,
+    )
+    base = BiSpikForCausalLM(base_config)
+    scaled = BiSpikForCausalLM(scaled_config)
+    scaled.load_state_dict(base.state_dict(), strict=False)
+    scaled.readout_log_scale.data.fill_(torch.log(torch.tensor(2.0)))
+
+    base_logits = base(input_ids)["logits"]
+    scaled_logits = scaled(input_ids)["logits"]
+
+    assert torch.allclose(scaled_logits, base_logits * 2.0)
 
 
 def test_fineweb_streaming_sequence_packing_builds_real_batches() -> None:

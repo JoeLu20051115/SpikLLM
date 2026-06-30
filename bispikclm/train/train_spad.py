@@ -181,6 +181,7 @@ def build_student_config_from_teacher_config(
         surrogate_alpha=base.surrogate_alpha,
         initializer_range=base.initializer_range,
         input_scale=base.input_scale,
+        readout_scale=base.readout_scale,
         teacher_model_id=train_config.teacher_model,
     )
 
