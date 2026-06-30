@@ -212,12 +212,17 @@ def compute_lm_monitoring_metrics(
         if attention_mask is not None:
             valid = valid & attention_mask[..., 1:].to(dtype=torch.bool)
         if valid.any():
-            predictions = shift_logits.argmax(dim=-1)
+            detached_logits = shift_logits.detach()
+            predictions = detached_logits.argmax(dim=-1)
             accuracy = predictions.eq(shift_labels).masked_select(valid).float().mean()
-            valid_logits = shift_logits[valid]
-            logit_mean = valid_logits.detach().float().mean()
-            logit_std = valid_logits.detach().float().std(unbiased=False)
-            logit_abs_max = valid_logits.detach().float().abs().max()
+            logit_values = detached_logits.float()
+            valid_float = valid.unsqueeze(-1).to(dtype=logit_values.dtype)
+            value_count = valid.sum().to(dtype=logit_values.dtype) * logit_values.shape[-1]
+            logit_sum = (logit_values * valid_float).sum()
+            logit_mean = logit_sum / value_count.clamp_min(1.0)
+            centered = (logit_values - logit_mean) * valid_float
+            logit_std = (centered.square().sum() / value_count.clamp_min(1.0)).sqrt()
+            logit_abs_max = logit_values.abs().masked_fill(~valid.unsqueeze(-1), 0.0).max()
             valid_tokens = valid.sum().detach().float()
         else:
             accuracy = hard_loss.new_zeros(())
@@ -396,15 +401,20 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
                     spike_threshold=config.model.spike_threshold,
                     membrane_decay=config.model.membrane_decay,
                 )
-            monitoring_metrics = compute_lm_monitoring_metrics(
-                logits=student_outputs["logits"],
-                labels=batch["labels"],
-                attention_mask=batch.get("attention_mask"),
-                hard_loss=losses["hard_loss"],
-            )
             accumulated_loss_snapshots.append({name: float(value.detach().cpu()) for name, value in losses.items()})
             (losses["total_loss"] / config.training.gradient_accumulation_steps).backward()
             if (batch_index + 1) % config.training.gradient_accumulation_steps == 0:
+                should_log = local_rank == 0 and wandb_run is not None and (step + 1) % config.training.log_interval == 0
+                monitoring_metrics = (
+                    compute_lm_monitoring_metrics(
+                        logits=student_outputs["logits"],
+                        labels=batch["labels"],
+                        attention_mask=batch.get("attention_mask"),
+                        hard_loss=losses["hard_loss"],
+                    )
+                    if should_log
+                    else {}
+                )
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters()),
                     config.training.gradient_clip,
@@ -416,7 +426,7 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
                 last_losses = average_loss_snapshots(accumulated_loss_snapshots)
                 accumulated_loss_snapshots = []
                 last_monitoring_metrics = monitoring_metrics
-                if local_rank == 0 and wandb_run is not None and step % config.training.log_interval == 0:
+                if should_log:
                     metrics = {
                         **{f"loss/{name}": value for name, value in last_losses.items()},
                         **last_monitoring_metrics,
