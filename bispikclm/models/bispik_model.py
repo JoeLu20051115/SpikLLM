@@ -57,8 +57,9 @@ else:
             step_attentions = [] if output_attentions else None
             step_spike_stats = [] if return_spike_stats else None
 
-            for _ in range(self.config.num_steps):
-                hidden_state = base_embedding
+            for step in range(self.config.num_steps):
+                step_scale = float(step + 1) / float(self.config.num_steps)
+                hidden_state = base_embedding * step_scale
                 hidden_states = [hidden_state] if output_hidden_states else None
                 attentions = [] if output_attentions else None
                 spike_stats = [] if return_spike_stats else None

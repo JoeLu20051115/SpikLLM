@@ -118,9 +118,10 @@ def compute_multilevel_distillation(
     if labels is None:
         hard_loss = student_logits.new_zeros(())
     else:
-        labels = labels[..., :seq_len].contiguous()
+        shift_logits = student_logits[..., :-1, :].contiguous()
+        labels = labels[..., 1:seq_len].contiguous()
         hard_loss = F.cross_entropy(
-            student_logits.reshape(-1, student_logits.size(-1)),
+            shift_logits.reshape(-1, shift_logits.size(-1)),
             labels.reshape(-1),
             ignore_index=-100,
         )

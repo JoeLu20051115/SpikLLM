@@ -54,6 +54,7 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert output["loss"].ndim == 0
     assert len(output["hidden_states"]) == config.num_hidden_layers + 1
     assert output["hidden_states"][0].shape == (config.num_steps, 2, 8, config.hidden_size)
+    assert not torch.allclose(output["hidden_states"][-1][0], output["hidden_states"][-1][1])
     assert len(output["attentions"]) == config.num_hidden_layers
     assert output["attentions"][0].shape == (config.num_steps, 2, config.num_attention_heads, 8, 8)
     assert torch.equal(output["attentions"][0], output["attentions"][0].bool().to(output["attentions"][0].dtype))
@@ -218,6 +219,33 @@ def test_spad_five_loss_backward_with_temporal_fusion() -> None:
     assert set(losses) >= {"embedding_loss", "attention_loss", "feature_loss", "soft_loss", "hard_loss", "total_loss"}
     assert losses["total_loss"].ndim == 0
     assert student_outputs["logits"].grad is not None
+
+
+def test_spad_hard_loss_uses_next_token_shift() -> None:
+    import torch
+    import torch.nn.functional as F
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=0.0, lambda_hard=1.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    student_outputs = {
+        "embedding_states": torch.randn(2, 1, 4, 4, requires_grad=True),
+        "hidden_states": (torch.randn(2, 1, 4, 4, requires_grad=True),),
+        "attentions": (torch.randint(0, 2, (2, 1, 1, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": student_logits,
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(1, 4, 4),),
+        "attentions": (torch.rand(1, 1, 4, 4),),
+        "logits": torch.randn(1, 4, 8),
+    }
+    labels = torch.tensor([[1, 2, 3, 4]])
+
+    losses = compute_multilevel_distillation(student_outputs, teacher_outputs, config, labels=labels)
+    shifted = F.cross_entropy(student_logits[..., :-1, :].reshape(-1, 8), labels[..., 1:].reshape(-1), ignore_index=-100)
+    unshifted = F.cross_entropy(student_logits.reshape(-1, 8), labels.reshape(-1), ignore_index=-100)
+
+    assert torch.isclose(losses["hard_loss"], shifted)
+    assert not torch.isclose(losses["hard_loss"], unshifted)
 
 
 def test_freeze_teacher_disables_gradients() -> None:
