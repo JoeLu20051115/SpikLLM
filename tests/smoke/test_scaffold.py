@@ -19,6 +19,21 @@ def test_scaffold_smoke() -> None:
     assert not Path("bispikclm/cache").exists()
 
 
+def test_zero_shot_eval_registry_contains_paper_tasks() -> None:
+    from bispikclm.train.eval_lm import EVAL_TASKS
+
+    assert set(EVAL_TASKS) == {
+        "arc_easy",
+        "arc_challenge",
+        "winogrande",
+        "boolq",
+        "piqa",
+        "hellaswag",
+        "openbookqa",
+        "headqa",
+    }
+
+
 def test_lm_forward_returns_tensor_features() -> None:
     import torch
 
@@ -158,6 +173,33 @@ def test_lm_model_uses_bispik_block_stack() -> None:
 
     assert len(model.model.layers) == config.num_hidden_layers
     assert all(isinstance(layer, BiSpikBlock) for layer in model.model.layers)
+    assert all(hasattr(layer, "attention_norm") for layer in model.model.layers)
+    assert all(hasattr(layer, "mlp_norm") for layer in model.model.layers)
+
+
+def test_block_tensor_path_uses_attention_then_mlp_residuals() -> None:
+    import torch
+
+    class AddOneAttention:
+        config = BiSpikConfig(hidden_size=4, num_attention_heads=1)
+
+        def __call__(self, hidden_state, **kwargs):
+            del kwargs
+            return {"context": hidden_state + 1.0, "attention_spikes": None}
+
+    class AddTwoMLP:
+        def __call__(self, hidden_state):
+            return hidden_state + 2.0
+
+    block = BiSpikBlock(AddOneAttention(), AddTwoMLP(), config=BiSpikConfig(hidden_size=4, num_attention_heads=1))
+    block.attention_norm = torch.nn.Identity()
+    block.mlp_norm = torch.nn.Identity()
+    block.out_lif = torch.nn.Identity()
+    hidden_state = torch.zeros(1, 2, 4)
+
+    output = block(hidden_state)
+
+    assert torch.equal(output, torch.full_like(hidden_state, 4.0))
 
 
 def test_block_forward_rejects_shape_mismatch() -> None:
@@ -249,6 +291,213 @@ def test_spad_hard_loss_uses_next_token_shift() -> None:
     assert not torch.isclose(losses["hard_loss"], unshifted)
 
 
+def test_spad_soft_loss_is_token_averaged() -> None:
+    import torch
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=1.0, lambda_hard=0.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    teacher_logits = torch.randn(1, 4, 8)
+
+    def outputs(logits: torch.Tensor) -> dict[str, object]:
+        return {
+            "embedding_states": torch.randn(2, logits.shape[0], logits.shape[1], 4, requires_grad=True),
+            "hidden_states": (torch.randn(2, logits.shape[0], logits.shape[1], 4, requires_grad=True),),
+            "attentions": (
+                torch.randint(0, 2, (2, logits.shape[0], 1, logits.shape[1], logits.shape[1]), dtype=torch.float32).requires_grad_(),
+            ),
+            "logits": logits,
+        }
+
+    def teacher(logits: torch.Tensor) -> dict[str, object]:
+        return {
+            "hidden_states": (torch.randn(logits.shape[0], logits.shape[1], 4),),
+            "attentions": (torch.rand(logits.shape[0], 1, logits.shape[1], logits.shape[1]),),
+            "logits": logits,
+        }
+
+    base = compute_multilevel_distillation(
+        outputs(student_logits),
+        teacher(teacher_logits),
+        config,
+        labels=torch.ones(1, 4, dtype=torch.long),
+    )["soft_loss"]
+    repeated = compute_multilevel_distillation(
+        outputs(torch.cat([student_logits, student_logits], dim=1)),
+        teacher(torch.cat([teacher_logits, teacher_logits], dim=1)),
+        config,
+        labels=torch.tensor([[1, 1, 1, 1, -100, 1, 1, 1]]),
+    )["soft_loss"]
+
+    assert torch.isclose(repeated, base, rtol=1e-5, atol=1e-5)
+
+
+def test_spad_soft_loss_uses_next_token_mask() -> None:
+    import torch
+    import torch.nn.functional as F
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=1.0, lambda_hard=0.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    teacher_logits = torch.randn(1, 4, 8)
+
+    student_outputs = {
+        "embedding_states": torch.randn(2, 1, 4, 4, requires_grad=True),
+        "hidden_states": (torch.randn(2, 1, 4, 4, requires_grad=True),),
+        "attentions": (torch.randint(0, 2, (2, 1, 1, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": student_logits,
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(1, 4, 4),),
+        "attentions": (torch.rand(1, 1, 4, 4),),
+        "logits": teacher_logits,
+    }
+    labels = torch.tensor([[1, 2, -100, 4]])
+
+    losses = compute_multilevel_distillation(student_outputs, teacher_outputs, config, labels=labels)
+    token_kl = F.kl_div(
+        F.log_softmax(student_logits[..., :-1, :] / config.temperature, dim=-1),
+        F.softmax(teacher_logits[..., :-1, :] / config.temperature, dim=-1),
+        reduction="none",
+    ).sum(dim=-1)
+    expected = token_kl.masked_select(labels[..., 1:].ne(-100)).mean() * (config.temperature**2)
+
+    assert torch.isclose(losses["soft_loss"], expected)
+
+
+def test_spad_soft_only_loss_respects_attention_mask() -> None:
+    import torch
+    import torch.nn.functional as F
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=1.0, lambda_hard=0.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    teacher_logits = torch.randn(1, 4, 8)
+    student_outputs = {
+        "embedding_states": torch.randn(2, 1, 4, 4, requires_grad=True),
+        "hidden_states": (torch.randn(2, 1, 4, 4, requires_grad=True),),
+        "attentions": (torch.randint(0, 2, (2, 1, 1, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": student_logits,
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(1, 4, 4),),
+        "attentions": (torch.rand(1, 1, 4, 4),),
+        "logits": teacher_logits,
+    }
+    attention_mask = torch.tensor([[1, 1, 0, 1]], dtype=torch.long)
+
+    losses = compute_multilevel_distillation(
+        student_outputs,
+        teacher_outputs,
+        config,
+        labels=None,
+        attention_mask=attention_mask,
+    )
+    token_kl = F.kl_div(
+        F.log_softmax(student_logits[..., :-1, :] / config.temperature, dim=-1),
+        F.softmax(teacher_logits[..., :-1, :] / config.temperature, dim=-1),
+        reduction="none",
+    ).sum(dim=-1)
+    expected = token_kl.masked_select(attention_mask[..., 1:].bool()).mean() * (config.temperature**2)
+
+    assert torch.isclose(losses["soft_loss"], expected)
+
+
+def test_spad_soft_loss_is_zero_when_all_targets_are_ignored() -> None:
+    import torch
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=1.0, lambda_hard=0.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    student_outputs = {
+        "embedding_states": torch.randn(2, 1, 4, 4, requires_grad=True),
+        "hidden_states": (torch.randn(2, 1, 4, 4, requires_grad=True),),
+        "attentions": (torch.randint(0, 2, (2, 1, 1, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": student_logits,
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(1, 4, 4),),
+        "attentions": (torch.rand(1, 1, 4, 4),),
+        "logits": torch.randn(1, 4, 8),
+    }
+
+    losses = compute_multilevel_distillation(
+        student_outputs,
+        teacher_outputs,
+        config,
+        labels=torch.full((1, 4), -100),
+    )
+
+    assert losses["soft_loss"].item() == 0.0
+    assert losses["hard_loss"].item() == 0.0
+    assert losses["total_loss"].item() == 0.0
+
+
+def test_spad_attention_mask_ignores_padding_targets() -> None:
+    import torch
+
+    config = SpADConfig(lambda_emb=0.0, lambda_attn=0.0, lambda_feat=0.0, lambda_soft=1.0, lambda_hard=1.0)
+    student_logits = torch.randn(1, 4, 8, requires_grad=True)
+    student_outputs = {
+        "embedding_states": torch.randn(2, 1, 4, 4, requires_grad=True),
+        "hidden_states": (torch.randn(2, 1, 4, 4, requires_grad=True),),
+        "attentions": (torch.randint(0, 2, (2, 1, 1, 4, 4), dtype=torch.float32).requires_grad_(),),
+        "logits": student_logits,
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.randn(1, 4, 4),),
+        "attentions": (torch.rand(1, 1, 4, 4),),
+        "logits": torch.randn(1, 4, 8),
+    }
+
+    losses = compute_multilevel_distillation(
+        student_outputs,
+        teacher_outputs,
+        config,
+        labels=torch.ones(1, 4, dtype=torch.long),
+        attention_mask=torch.zeros(1, 4, dtype=torch.long),
+    )
+
+    assert losses["soft_loss"].item() == 0.0
+    assert losses["hard_loss"].item() == 0.0
+
+
+def test_training_logs_average_accumulated_microbatches() -> None:
+    from bispikclm.train.train_spad import average_loss_snapshots
+
+    averaged = average_loss_snapshots(
+        [
+            {"total_loss": 12.0, "hard_loss": 10.0},
+            {"total_loss": 6.0, "hard_loss": 8.0},
+            {"total_loss": 3.0, "hard_loss": 5.0},
+        ]
+    )
+
+    assert averaged == {"total_loss": 7.0, "hard_loss": 23.0 / 3.0}
+
+
+def test_lm_monitoring_metrics_include_logit_scale_and_valid_tokens() -> None:
+    import torch
+
+    from bispikclm.train.train_spad import compute_lm_monitoring_metrics
+
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 1.0, 2.0],
+                [3.0, 4.0, 5.0],
+                [6.0, 7.0, 8.0],
+            ]
+        ]
+    )
+    labels = torch.tensor([[0, 1, -100]])
+    attention_mask = torch.tensor([[1, 1, 0]])
+    hard_loss = torch.tensor(2.0)
+
+    metrics = compute_lm_monitoring_metrics(logits, labels, attention_mask, hard_loss)
+
+    assert metrics["train/valid_tokens"] == 1.0
+    assert metrics["train/logit_abs_max"] == 2.0
+    assert "train/logit_mean" in metrics
+    assert "train/logit_std" in metrics
+
+
 def test_freeze_teacher_disables_gradients() -> None:
     import torch
 
@@ -266,4 +515,27 @@ def test_readme_training_command_matches_cli() -> None:
     assert "python -m bispikclm.train.train_spad" in readme
     assert "--teacher-model" in readme
     assert "--dummy-batch" in readme
+    assert "--learning-rate" in readme
     assert "scripts/run_sft.sh" in readme
+
+
+def test_run_sft_script_does_not_override_config_defaults() -> None:
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env["CONFIG"] = "configs/bispikclm_opt350m_spad.toml"
+    env["TRAIN_MODE"] = "--dry-run"
+    env["NPROC_PER_NODE"] = "1"
+    env["PATH"] = f"{Path('.venv/bin').resolve()}{os.pathsep}{env['PATH']}"
+
+    result = subprocess.run(
+        ["bash", "scripts/run_sft.sh"],
+        check=True,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "'teacher_model_id': 'facebook/opt-350m'" in result.stdout
+    assert "'model_name': 'facebook/opt-350m'" in result.stdout
