@@ -70,15 +70,14 @@ else:
                 attention_mask=attention_mask,
                 return_weights=return_attention,
             )
-            if return_attention:
+            if isinstance(attention_result, dict):
+                attended = attention_result["context"]
+                attention_weights = attention_result["attention_spikes"]
+            elif return_attention:
                 attended, attention_weights = attention_result
             else:
-                if isinstance(attention_result, dict):
-                    attended = attention_result["context"]
-                    attention_weights = attention_result["attention_spikes"]
-                else:
-                    attended = attention_result
-                    attention_weights = None
+                attended = attention_result
+                attention_weights = None
             transformed = _call_forward(self.mlp, attended)
             if isinstance(hidden_state, torch.Tensor):
                 hidden_state = hidden_state + transformed

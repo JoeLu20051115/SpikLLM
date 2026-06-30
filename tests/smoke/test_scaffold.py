@@ -54,6 +54,8 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert output["loss"].ndim == 0
     assert len(output["hidden_states"]) == config.num_hidden_layers + 1
     assert len(output["attentions"]) == config.num_hidden_layers
+    assert output["attentions"][0].shape == (2, config.num_attention_heads, 8, 8)
+    assert torch.equal(output["attentions"][0], output["attentions"][0].bool().to(output["attentions"][0].dtype))
     assert len(output["spike_stats"]) == config.num_hidden_layers
     assert output["embedding_states"].shape == (2, 8, config.hidden_size)
     assert torch.count_nonzero(output["embedding_states"][:, 6:, :]) == 0
@@ -97,17 +99,17 @@ def test_attention_is_causal_and_respects_padding_mask() -> None:
             projection.weight.copy_(torch.eye(config.hidden_size))
 
     hidden_state = torch.tensor([[[1.0, 0.0], [0.0, 1.0], [5.0, 0.0]]])
-    _, causal_weights = attention(hidden_state, return_weights=True)
-    _, masked_weights = attention(
+    causal_output = attention(hidden_state, return_weights=True)
+    masked_output = attention(
         hidden_state,
         attention_mask=torch.tensor([[1, 0, 1]], dtype=torch.long),
         return_weights=True,
     )
+    causal_weights = causal_output["attention_spikes"]
+    masked_weights = masked_output["attention_spikes"]
 
-    assert causal_weights is not None
-    assert masked_weights is not None
-    assert torch.allclose(causal_weights[0].triu(diagonal=1), torch.zeros_like(causal_weights[0].triu(diagonal=1)))
-    assert torch.allclose(masked_weights[0, :, 1], torch.zeros_like(masked_weights[0, :, 1]))
+    assert torch.allclose(causal_weights[0, 0].triu(diagonal=1), torch.zeros_like(causal_weights[0, 0].triu(diagonal=1)))
+    assert torch.allclose(masked_weights[0, :, :, 1], torch.zeros_like(masked_weights[0, :, :, 1]))
 
 
 def test_lm_loss_ignores_masked_positions() -> None:

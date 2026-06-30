@@ -61,7 +61,7 @@ else:
             hidden_state: torch.Tensor | list[float],
             attention_mask: torch.Tensor | None = None,
             return_weights: bool = False,
-        ) -> torch.Tensor | list[float] | tuple[torch.Tensor, torch.Tensor | None]:
+        ) -> dict[str, torch.Tensor] | list[float] | tuple[list[float], None]:
             if isinstance(hidden_state, torch.Tensor):
                 query = self._split_heads(self.q_proj(hidden_state))
                 key = self._split_heads(self.k_proj(hidden_state))
@@ -84,8 +84,7 @@ else:
                 support = spikes.sum(dim=-1, keepdim=True).clamp_min(1.0)
                 weights = spikes / support
                 attended = self.out_proj(self._merge_heads(torch.matmul(weights, value)))
-                if return_weights:
-                    return attended, weights
+                del return_weights
                 return {
                     "context": attended,
                     "attention_scores": masked_scores,
