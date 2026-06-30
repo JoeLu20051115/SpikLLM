@@ -28,6 +28,7 @@ else:
             super().__init__()
             self.config = config
             self.model = BiSpikModel(config)
+            self.final_layer_norm = nn.LayerNorm(config.hidden_size)
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
             self.lm_head.weight = self.model.token_embedding.weight
 
@@ -49,7 +50,7 @@ else:
             )
             last_hidden_state = model_output["last_hidden_state"]
             assert isinstance(last_hidden_state, torch.Tensor)
-            logits = self.lm_head(last_hidden_state)
+            logits = self.lm_head(self.final_layer_norm(last_hidden_state))
             loss = None
             if labels is not None:
                 shift_logits = logits[..., :-1, :].contiguous()

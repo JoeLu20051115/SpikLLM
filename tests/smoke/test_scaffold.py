@@ -64,6 +64,7 @@ def test_lm_forward_returns_tensor_features() -> None:
     )
     minimal_output = model(input_ids=input_ids)
 
+    assert isinstance(model.final_layer_norm, torch.nn.LayerNorm)
     assert output["logits"].shape == (2, 8, config.vocab_size)
     assert output["loss"] is not None
     assert output["loss"].ndim == 0
