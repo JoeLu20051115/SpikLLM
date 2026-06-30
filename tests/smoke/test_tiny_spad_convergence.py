@@ -25,7 +25,7 @@ def test_tiny_spad_overfits_fixed_batch() -> None:
     hidden_projector = SpADProjector(config.hidden_size, config.hidden_size).to(device)
     trainable_parameters = list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters())
     optimizer = torch.optim.Adam(trainable_parameters, lr=3e-3)
-    distill_config = SpADConfig(lambda_emb=0.05, lambda_attn=0.05, lambda_feat=0.05, lambda_soft=0.35, lambda_hard=0.5)
+    distill_config = SpADConfig()
 
     input_ids = torch.randint(4, config.vocab_size, (2, 12), device=device)
     labels = input_ids.clone()
@@ -42,7 +42,7 @@ def test_tiny_spad_overfits_fixed_batch() -> None:
     }
 
     history: list[dict[str, float]] = []
-    for _ in range(120):
+    for _ in range(160):
         optimizer.zero_grad(set_to_none=True)
         student_outputs = student(
             input_ids=input_ids,
@@ -68,6 +68,7 @@ def test_tiny_spad_overfits_fixed_batch() -> None:
 
     tracked = ("embedding_loss", "attention_loss", "feature_loss", "soft_loss", "hard_loss")
     assert history[-1]["hard_loss"] < 4.0
+    assert history[-1]["soft_loss"] < 5.0
     assert all(history[-1][name] < history[0][name] for name in tracked), history
 
 

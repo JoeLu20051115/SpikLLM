@@ -20,7 +20,7 @@ pip install -e .
 
 Core runtime dependencies are PyTorch, SpikingJelly, Hugging Face `transformers`, and `datasets`.
 
-## Dummy Sanity Step
+## Dummy Fixed-Batch Diagnostic
 
 ```bash
 python -m bispikclm.train.train_spad \
@@ -28,11 +28,12 @@ python -m bispikclm.train.train_spad \
   --output-dir output/v1-opt-sft \
   --sequence-length 16 \
   --time-steps 2 \
-  --max-steps 1 \
+  --max-steps 80 \
+  --learning-rate 3e-3 \
   --dummy-batch
 ```
 
-This runs one frozen OPT teacher forward pass, one BiSpikCLM student multi-step forward pass, the five-term SpAD loss, `loss.backward()`, gradient clipping, `optimizer.step()`, and checkpoint save.
+This reuses one fixed batch and one frozen OPT teacher target to report `initial_*`, `final_*`, and `delta_*` values for the five-term SpAD loss before saving a checkpoint.
 
 ## Script Launch
 

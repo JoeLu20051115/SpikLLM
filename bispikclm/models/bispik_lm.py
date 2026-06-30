@@ -29,6 +29,7 @@ else:
             self.config = config
             self.model = BiSpikModel(config)
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+            self.lm_head.weight = self.model.token_embedding.weight
 
         def forward(
             self,

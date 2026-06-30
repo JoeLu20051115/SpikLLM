@@ -7,9 +7,12 @@ from .bispik_config import BiSpikConfig
 try:
     import torch
     from torch import nn
+    from spikingjelly.activation_based import neuron, surrogate
 except ImportError:  # pragma: no cover - optional runtime dependency
     torch = None
     nn = None
+    neuron = None
+    surrogate = None
 
 
 if nn is None:  # pragma: no cover - import-time fallback when torch is unavailable
@@ -47,6 +50,21 @@ else:
             self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
             self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
             self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
+            if neuron is None or surrogate is None:
+                raise ImportError("BiSpikAttention requires spikingjelly for LIF activation")
+            lif_kwargs = {
+                "tau": 1.0 / max(1.0 - config.membrane_decay, 1e-6),
+                "v_threshold": config.spike_threshold,
+                "surrogate_function": surrogate.ATan(alpha=config.surrogate_alpha),
+                "detach_reset": True,
+                "decay_input": False,
+            }
+            self.q_lif = neuron.LIFNode(**lif_kwargs)
+            self.k_lif = neuron.LIFNode(**lif_kwargs)
+            self.v_lif = neuron.LIFNode(**lif_kwargs)
+            self.attn_lif = neuron.LIFNode(**lif_kwargs)
+            self.attn_out_lif = neuron.LIFNode(**lif_kwargs)
+            self.out_lif = neuron.LIFNode(**lif_kwargs)
 
         def _split_heads(self, tensor: torch.Tensor) -> torch.Tensor:
             batch_size, sequence_length, _ = tensor.shape
@@ -66,29 +84,36 @@ else:
                 query = self._split_heads(self.q_proj(hidden_state))
                 key = self._split_heads(self.k_proj(hidden_state))
                 value = self._split_heads(self.v_proj(hidden_state))
-                scale = max(self.head_dim, 1) ** -0.5
-                scores = torch.matmul(query, key.transpose(-1, -2)) * scale
+                query_spikes = self.q_lif(query)
+                key_spikes = self.k_lif(key)
+                value_spikes = self.v_lif(value)
+                attention_int = torch.matmul(query_spikes, key_spikes.transpose(-1, -2))
                 sequence_length = hidden_state.shape[-2]
                 causal_mask = torch.ones(
                     (sequence_length, sequence_length),
-                    dtype=torch.bool,
+                    dtype=attention_int.dtype,
                     device=hidden_state.device,
                 ).tril()
                 valid_mask = causal_mask.unsqueeze(0).unsqueeze(0)
                 if attention_mask is not None:
-                    key_mask = attention_mask[:, None, None, :].to(dtype=torch.bool, device=hidden_state.device)
-                    valid_mask = valid_mask & key_mask
+                    key_mask = attention_mask[:, None, None, :].to(dtype=attention_int.dtype, device=hidden_state.device)
+                    valid_mask = valid_mask * key_mask
 
-                masked_scores = scores.masked_fill(~valid_mask, 0.0)
-                spikes = (masked_scores > self.config.spike_threshold).to(scores.dtype) * valid_mask.to(scores.dtype)
-                support = spikes.sum(dim=-1, keepdim=True).clamp_min(1.0)
-                weights = spikes / support
-                attended = self.out_proj(self._merge_heads(torch.matmul(weights, value)))
+                masked_attention_int = attention_int * valid_mask
+                attention_spikes = self.attn_lif(masked_attention_int) * valid_mask
+                attention_out = torch.matmul(attention_spikes, value_spikes)
+                attention_out_spikes = self.attn_out_lif(attention_out)
+                projected = self.out_proj(self._merge_heads(attention_out_spikes))
+                attended = self.out_lif(projected)
                 del return_weights
                 return {
                     "context": attended,
-                    "attention_scores": masked_scores,
-                    "attention_spikes": spikes,
+                    "attention_scores": masked_attention_int,
+                    "attention_int": attention_int,
+                    "query_spikes": query_spikes,
+                    "key_spikes": key_spikes,
+                    "value_spikes": value_spikes,
+                    "attention_spikes": attention_spikes,
                 }
 
             scale = 1.0 / max(self.config.num_attention_heads, 1)

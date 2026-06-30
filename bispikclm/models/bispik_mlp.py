@@ -39,6 +39,7 @@ else:
                 tau=1.0 / max(1.0 - config.membrane_decay, 1e-6),
                 surrogate_function=surrogate.ATan(alpha=config.surrogate_alpha),
                 detach_reset=True,
+                decay_input=False,
             )
 
         def forward(self, hidden_state: torch.Tensor | list[float]) -> torch.Tensor | list[float]:
