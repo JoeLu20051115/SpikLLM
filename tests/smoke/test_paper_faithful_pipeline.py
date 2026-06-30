@@ -26,6 +26,7 @@ def test_table3_config_file_is_loaded_and_propagated() -> None:
     assert config.training.gradient_clip == 0.7
     assert config.distillation.temperature == 2.0
     assert config.distillation.lambda_emb == 0.2
+    assert config.model.spike_threshold == 0.7
     assert config.model.surrogate_alpha == 2.0
     assert config.training.time_steps in (2, 4)
     assert config.training.target_tokens == 1_000_000_000
@@ -50,6 +51,7 @@ def test_three_opt_scale_configs_are_ready_for_training() -> None:
         assert config.training.learning_rate == 5e-4
         assert config.training.warmup_ratio == 0.2
         assert config.training.gradient_clip == 0.7
+        assert config.model.spike_threshold == 0.7
         assert resolve_max_steps(config.training, world_size=8) == 239
 
 
@@ -130,6 +132,16 @@ def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
         assert torch.equal(tensor, tensor.bool().to(tensor.dtype))
     expected_int = torch.matmul(output["query_spikes"], output["key_spikes"].transpose(-1, -2))
     assert torch.equal(output["attention_int"], expected_int)
+
+
+def test_sffn_lif_uses_configured_spike_threshold() -> None:
+    from bispikclm.models import BiSpikConfig
+    from bispikclm.models.bispik_mlp import BiSpikMLP
+
+    config = BiSpikConfig(hidden_size=8, intermediate_size=16, spike_threshold=0.7)
+    mlp = BiSpikMLP(config)
+
+    assert float(mlp.lif.v_threshold) == 0.7
 
 
 def test_spad_attention_and_feature_losses_include_rate_mse_branches() -> None:

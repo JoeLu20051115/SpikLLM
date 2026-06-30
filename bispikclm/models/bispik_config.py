@@ -13,7 +13,7 @@ class BiSpikConfig:
     bos_token_id: int = 2
     eos_token_id: int = 2
     num_steps: int = 4
-    spike_threshold: float = 1.0
+    spike_threshold: float = 0.7
     tau: float = 0.9
     membrane_decay: float = 0.9
     spike_surrogate: str = "arctan"

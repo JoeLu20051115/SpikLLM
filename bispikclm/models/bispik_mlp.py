@@ -37,6 +37,7 @@ else:
             self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
             self.lif = neuron.LIFNode(
                 tau=1.0 / max(1.0 - config.membrane_decay, 1e-6),
+                v_threshold=config.spike_threshold,
                 surrogate_function=surrogate.ATan(alpha=config.surrogate_alpha),
                 detach_reset=True,
                 decay_input=False,
