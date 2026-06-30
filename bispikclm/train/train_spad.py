@@ -179,6 +179,8 @@ def build_student_config_from_teacher_config(
         membrane_decay=base.membrane_decay,
         spike_surrogate=base.spike_surrogate,
         surrogate_alpha=base.surrogate_alpha,
+        initializer_range=base.initializer_range,
+        input_scale=base.input_scale,
         teacher_model_id=train_config.teacher_model,
     )
 

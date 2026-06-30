@@ -83,6 +83,16 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert minimal_output["spike_stats"] is None
 
 
+def test_lm_uses_transformer_scale_embedding_initialization() -> None:
+    config = BiSpikConfig(vocab_size=1024, hidden_size=64, num_attention_heads=4, num_hidden_layers=1)
+    model = BiSpikForCausalLM(config)
+
+    embedding_std = float(model.model.token_embedding.weight.detach().std())
+
+    assert model.lm_head.weight.data_ptr() == model.model.token_embedding.weight.data_ptr()
+    assert 0.01 < embedding_std < 0.08
+
+
 def test_attention_path_is_tensor_native_and_softmax_free() -> None:
     import torch
 

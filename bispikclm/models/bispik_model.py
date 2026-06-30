@@ -31,6 +31,10 @@ else:
             self.layers = nn.ModuleList(
                 BiSpikBlock.from_config(config) for _ in range(config.num_hidden_layers)
             )
+            self.token_embedding.weight.data.normal_(mean=0.0, std=config.initializer_range)
+            self.position_embeddings.weight.data.normal_(mean=0.0, std=config.initializer_range)
+            if self.token_embedding.padding_idx is not None:
+                self.token_embedding.weight.data[self.token_embedding.padding_idx].zero_()
 
         def forward(
             self,
@@ -48,6 +52,10 @@ else:
             sequence_length = input_ids.shape[-1]
             positions = torch.arange(sequence_length, device=input_ids.device).unsqueeze(0)
             base_embedding = self.token_embedding(input_ids) + self.position_embeddings(positions)
+            input_scale = self.config.input_scale
+            if input_scale is None:
+                input_scale = 1.0 / max(self.config.initializer_range, 1e-6)
+            base_embedding = base_embedding * input_scale
             if attention_mask is not None:
                 base_embedding = base_embedding * attention_mask.unsqueeze(-1).to(base_embedding.dtype)
 

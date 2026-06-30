@@ -18,4 +18,6 @@ class BiSpikConfig:
     membrane_decay: float = 0.9
     spike_surrogate: str = "arctan"
     surrogate_alpha: float = 2.0
+    initializer_range: float = 0.02
+    input_scale: float | None = None
     teacher_model_id: str = "facebook/opt-125m"
