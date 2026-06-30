@@ -151,6 +151,56 @@ def test_student_config_inherits_opt_dimensions_without_debug_truncation() -> No
     assert student_config.num_steps == 4
 
 
+def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
+    from types import SimpleNamespace
+
+    import torch
+
+    from bispikclm.train.train_spad import TrainingConfig, build_student_from_teacher
+
+    hidden_size = 4
+    vocab_size = 8
+    max_positions = 6
+    teacher = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=vocab_size,
+            hidden_size=hidden_size,
+            ffn_dim=8,
+            num_attention_heads=2,
+            num_hidden_layers=1,
+            max_position_embeddings=max_positions,
+            pad_token_id=1,
+            bos_token_id=2,
+            eos_token_id=2,
+        ),
+        model=SimpleNamespace(
+            decoder=SimpleNamespace(
+                embed_tokens=torch.nn.Embedding(vocab_size, hidden_size),
+                embed_positions=torch.nn.Embedding(max_positions + 2, hidden_size),
+            )
+        ),
+    )
+    with torch.no_grad():
+        teacher.model.decoder.embed_tokens.weight.copy_(
+            torch.arange(vocab_size * hidden_size, dtype=torch.float32).view(vocab_size, hidden_size)
+        )
+        teacher.model.decoder.embed_positions.weight.copy_(
+            torch.arange((max_positions + 2) * hidden_size, dtype=torch.float32).view(max_positions + 2, hidden_size)
+        )
+
+    student, _, _ = build_student_from_teacher(
+        teacher,
+        TrainingConfig(time_steps=2, teacher_model="facebook/opt-125m", sequence_length=max_positions),
+    )
+
+    assert torch.equal(student.model.token_embedding.weight, teacher.model.decoder.embed_tokens.weight)
+    assert torch.equal(
+        student.model.position_embeddings.weight,
+        teacher.model.decoder.embed_positions.weight[2 : max_positions + 2],
+    )
+    assert student.lm_head.weight.data_ptr() == student.model.token_embedding.weight.data_ptr()
+
+
 def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     import torch
 

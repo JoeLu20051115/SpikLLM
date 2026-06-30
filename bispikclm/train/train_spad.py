@@ -186,6 +186,29 @@ def build_student_config_from_teacher_config(
     )
 
 
+def initialize_student_embeddings_from_teacher(student: BiSpikForCausalLM, teacher: nn.Module) -> None:
+    teacher_decoder = getattr(getattr(teacher, "model", None), "decoder", None)
+    teacher_token_embedding = getattr(teacher_decoder, "embed_tokens", None)
+    teacher_position_embedding = getattr(teacher_decoder, "embed_positions", None)
+    with torch.no_grad():
+        if teacher_token_embedding is not None:
+            token_source = teacher_token_embedding.weight.detach()
+            token_target = student.model.token_embedding.weight
+            token_count = min(token_target.shape[0], token_source.shape[0])
+            hidden_size = min(token_target.shape[1], token_source.shape[1])
+            token_target[:token_count, :hidden_size].copy_(token_source[:token_count, :hidden_size])
+        if teacher_position_embedding is not None:
+            position_source = teacher_position_embedding.weight.detach()
+            position_target = student.model.position_embeddings.weight
+            opt_offset = 2 if position_source.shape[0] >= position_target.shape[0] + 2 else 0
+            position_count = min(position_target.shape[0], position_source.shape[0] - opt_offset)
+            hidden_size = min(position_target.shape[1], position_source.shape[1])
+            if position_count > 0:
+                position_target[:position_count, :hidden_size].copy_(
+                    position_source[opt_offset : opt_offset + position_count, :hidden_size]
+                )
+
+
 def build_student_from_teacher(
     teacher: nn.Module,
     train_config: TrainingConfig,
@@ -194,6 +217,7 @@ def build_student_from_teacher(
     teacher_config = teacher.config
     student_config = build_student_config_from_teacher_config(teacher_config, train_config, model_config)
     student = BiSpikForCausalLM(student_config)
+    initialize_student_embeddings_from_teacher(student, teacher)
     teacher_dim = getattr(teacher_config, "hidden_size", student_config.hidden_size)
     return (
         student,
