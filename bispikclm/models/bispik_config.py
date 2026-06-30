@@ -17,4 +17,5 @@ class BiSpikConfig:
     tau: float = 0.9
     membrane_decay: float = 0.9
     spike_surrogate: str = "arctan"
+    surrogate_alpha: float = 2.0
     teacher_model_id: str = "facebook/opt-125m"
