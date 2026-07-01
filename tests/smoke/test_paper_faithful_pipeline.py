@@ -33,6 +33,15 @@ def test_table3_config_file_is_loaded_and_propagated() -> None:
     assert config.training.target_tokens == 1_000_000_000
 
 
+def test_probe_scheduler_horizon_can_differ_from_stop_steps() -> None:
+    from bispikclm.train.train_spad import TrainingConfig, resolve_max_steps, resolve_scheduler_steps
+
+    config = TrainingConfig(max_steps=80, target_tokens=None, scheduler_max_steps=2000)
+
+    assert resolve_max_steps(config) == 80
+    assert resolve_scheduler_steps(config) == 2000
+
+
 def test_three_opt_scale_configs_are_ready_for_training() -> None:
     from bispikclm.train.train_spad import load_experiment_config, resolve_max_steps
 

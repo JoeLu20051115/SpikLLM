@@ -47,6 +47,7 @@ class TrainingConfig:
     batch_size: int = 16
     gradient_accumulation_steps: int = 16
     max_steps: int = 1
+    scheduler_max_steps: int | None = None
     target_tokens: int | None = None
     warmup_ratio: float = 0.2
     gradient_clip: float = 0.7
@@ -112,6 +113,12 @@ def resolve_max_steps(train_config: TrainingConfig, world_size: int = 1) -> int:
     return max(1, math.ceil(train_config.target_tokens / tokens_per_step))
 
 
+def resolve_scheduler_steps(train_config: TrainingConfig, world_size: int = 1) -> int:
+    if train_config.scheduler_max_steps is not None:
+        return max(1, train_config.scheduler_max_steps)
+    return resolve_max_steps(train_config, world_size)
+
+
 def build_training_payload(
     config: BiSpikConfig,
     distill_config: SpADConfig,
@@ -132,6 +139,7 @@ def build_training_payload(
             "runtime_ready": torch is not None and AutoModelForCausalLM is not None,
             "target_tokens": train_config.target_tokens if train_config is not None else None,
             "resolved_max_steps": resolved_steps,
+            "scheduler_max_steps": train_config.scheduler_max_steps if train_config is not None else None,
             "precision": train_config.precision if train_config is not None else None,
             "wandb": train_config.use_wandb if train_config is not None else None,
         },
@@ -449,8 +457,9 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
     )
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     config.training.max_steps = resolve_max_steps(config.training, world_size)
-    warmup_steps = max(1, int(config.training.max_steps * config.training.warmup_ratio))
-    scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, max(config.training.max_steps, 1))
+    scheduler_steps = resolve_scheduler_steps(config.training, world_size)
+    warmup_steps = max(1, int(scheduler_steps * config.training.warmup_ratio))
+    scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, max(scheduler_steps, 1))
     start_step = 0
     if resume_from is not None:
         checkpoint = torch.load(resume_from, map_location=device)
@@ -685,6 +694,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sequence-length", type=int, default=None)
     parser.add_argument("--time-steps", type=int, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--scheduler-max-steps", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
@@ -711,6 +721,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_steps is not None:
         experiment_config.training.max_steps = args.max_steps
         experiment_config.training.target_tokens = None
+    if args.scheduler_max_steps is not None:
+        experiment_config.training.scheduler_max_steps = args.scheduler_max_steps
     if args.batch_size is not None:
         experiment_config.training.batch_size = args.batch_size
     if args.gradient_accumulation_steps is not None:
