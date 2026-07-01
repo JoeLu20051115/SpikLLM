@@ -222,7 +222,7 @@ def build_student_from_teacher(
     return (
         student,
         SpADProjector(student_config.hidden_size, teacher_dim),
-        SpADProjector(student_config.hidden_size, teacher_dim),
+        SpADProjector(student_config.hidden_size, teacher_dim, normalize_same_dim=True),
     )
 
 

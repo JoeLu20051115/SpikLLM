@@ -31,11 +31,11 @@ if nn is None:  # pragma: no cover
 
 else:
     class SpADProjector(nn.Module):  # type: ignore[no-redef]
-        def __init__(self, student_dim: int, teacher_dim: int) -> None:
+        def __init__(self, student_dim: int, teacher_dim: int, *, normalize_same_dim: bool = False) -> None:
             super().__init__()
             if student_dim == teacher_dim:
                 self.proj = nn.Identity()
-                self.norm = nn.Identity()
+                self.norm = nn.LayerNorm(teacher_dim) if normalize_same_dim else nn.Identity()
             else:
                 hidden_dim = max(student_dim, teacher_dim)
                 self.proj = nn.Sequential(

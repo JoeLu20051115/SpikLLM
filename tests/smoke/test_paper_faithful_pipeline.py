@@ -305,6 +305,47 @@ def test_trainable_parameter_detection_skips_identity_projectors() -> None:
     assert _has_trainable_parameters(SpADProjector(4, 8))
 
 
+def test_hidden_projector_uses_layer_norm_for_same_dim_sfa() -> None:
+    from types import SimpleNamespace
+
+    import torch
+
+    from bispikclm.train.train_spad import TrainingConfig, build_student_from_teacher, _has_trainable_parameters
+
+    hidden_size = 4
+    teacher = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=8,
+            hidden_size=hidden_size,
+            ffn_dim=8,
+            num_attention_heads=2,
+            num_hidden_layers=1,
+            max_position_embeddings=6,
+            pad_token_id=1,
+            bos_token_id=2,
+            eos_token_id=2,
+        ),
+        model=SimpleNamespace(
+            decoder=SimpleNamespace(
+                embed_tokens=torch.nn.Embedding(8, hidden_size),
+                embed_positions=torch.nn.Embedding(8, hidden_size),
+            )
+        ),
+    )
+
+    _, embedding_projector, hidden_projector = build_student_from_teacher(
+        teacher,
+        TrainingConfig(time_steps=2, teacher_model="facebook/opt-125m", sequence_length=6),
+    )
+    tensor = torch.tensor([[[1.0, 2.0, 3.0, 4.0]]])
+
+    assert not _has_trainable_parameters(embedding_projector)
+    assert torch.equal(embedding_projector(tensor), tensor)
+    assert _has_trainable_parameters(hidden_projector)
+    assert not torch.equal(hidden_projector(tensor), tensor)
+    assert torch.isclose(hidden_projector(tensor).mean(dim=-1), torch.zeros(1, 1), atol=1e-5).all()
+
+
 def test_identity_projector_checkpoint_round_trip(tmp_path) -> None:
     import torch
 
