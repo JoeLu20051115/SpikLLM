@@ -62,7 +62,7 @@ else:
             self.q_lif = neuron.LIFNode(**lif_kwargs)
             self.k_lif = neuron.LIFNode(**lif_kwargs)
             self.v_lif = neuron.LIFNode(**lif_kwargs)
-            self.attn_lif = neuron.LIFNode(**lif_kwargs)
+            self.attn_lif = neuron.LIFNode(**{**lif_kwargs, "v_threshold": max(config.spike_threshold, 1.0)})
             self.attn_out_lif = neuron.LIFNode(**lif_kwargs)
             self.out_lif = neuron.LIFNode(**lif_kwargs)
 

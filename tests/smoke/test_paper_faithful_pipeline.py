@@ -222,6 +222,20 @@ def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     assert torch.equal(output["attention_int"], expected_int)
 
 
+def test_sfsa_attention_neuron_uses_integer_overlap_threshold_floor() -> None:
+    from bispikclm.models import BiSpikConfig
+    from bispikclm.models.bispik_attention import BiSpikAttention
+
+    attention = BiSpikAttention(BiSpikConfig(hidden_size=8, num_attention_heads=2, spike_threshold=0.7))
+
+    assert float(attention.q_lif.v_threshold) == 0.7
+    assert float(attention.k_lif.v_threshold) == 0.7
+    assert float(attention.v_lif.v_threshold) == 0.7
+    assert float(attention.attn_out_lif.v_threshold) == 0.7
+    assert float(attention.out_lif.v_threshold) == 0.7
+    assert float(attention.attn_lif.v_threshold) == 1.0
+
+
 def test_sffn_lif_uses_configured_spike_threshold() -> None:
     from bispikclm.models import BiSpikConfig
     from bispikclm.models.bispik_mlp import BiSpikMLP
