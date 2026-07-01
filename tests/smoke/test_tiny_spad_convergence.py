@@ -66,7 +66,7 @@ def test_tiny_spad_overfits_fixed_batch() -> None:
         optimizer.step()
         history.append({name: float(value.detach().cpu()) for name, value in losses.items()})
 
-    tracked = ("attention_loss", "soft_loss", "hard_loss", "total_loss")
+    tracked = ("embedding_loss", "attention_loss", "feature_loss", "soft_loss", "hard_loss")
     assert history[-1]["hard_loss"] < 4.0
     assert history[-1]["soft_loss"] < 5.0
     assert all(history[-1][name] < history[0][name] for name in tracked), history
