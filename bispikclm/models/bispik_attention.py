@@ -50,6 +50,8 @@ else:
             self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
             self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
             self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
+            for projection in (self.q_proj, self.k_proj, self.v_proj, self.out_proj):
+                projection.weight.data.normal_(mean=0.0, std=config.initializer_range)
             if neuron is None or surrogate is None:
                 raise ImportError("BiSpikAttention requires spikingjelly for LIF activation")
             lif_kwargs = {

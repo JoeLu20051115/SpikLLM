@@ -94,6 +94,35 @@ def test_lm_uses_transformer_scale_embedding_initialization() -> None:
     assert 0.01 < embedding_std < 0.08
 
 
+def test_spiking_linear_layers_use_transformer_scale_initialization() -> None:
+    import torch
+
+    config = BiSpikConfig(
+        vocab_size=1024,
+        hidden_size=64,
+        intermediate_size=128,
+        num_attention_heads=4,
+        num_hidden_layers=1,
+        initializer_range=0.02,
+    )
+    model = BiSpikForCausalLM(config)
+    layer = model.model.layers[0]
+    linear_layers = [
+        layer.attention.q_proj,
+        layer.attention.k_proj,
+        layer.attention.v_proj,
+        layer.attention.out_proj,
+        layer.mlp.fc1,
+        layer.mlp.fc2,
+    ]
+
+    for linear in linear_layers:
+        weight_std = float(linear.weight.detach().std())
+        assert 0.014 <= weight_std <= 0.026
+        if linear.bias is not None:
+            assert torch.count_nonzero(linear.bias.detach()) == 0
+
+
 def test_attention_path_is_tensor_native_and_softmax_free() -> None:
     import torch
 

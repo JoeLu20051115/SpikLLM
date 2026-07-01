@@ -35,6 +35,10 @@ else:
                 raise ImportError("BiSpikMLP requires spikingjelly for LIF activation")
             self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
             self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+            for linear in (self.fc1, self.fc2):
+                linear.weight.data.normal_(mean=0.0, std=config.initializer_range)
+                if linear.bias is not None:
+                    linear.bias.data.zero_()
             self.lif = neuron.LIFNode(
                 tau=1.0 / max(1.0 - config.membrane_decay, 1e-6),
                 v_threshold=config.spike_threshold,
