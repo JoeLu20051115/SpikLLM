@@ -201,6 +201,49 @@ def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
     assert student.lm_head.weight.data_ptr() == student.model.token_embedding.weight.data_ptr()
 
 
+def test_embedding_alignment_stays_teacher_scale_while_block_input_is_spiking() -> None:
+    import torch
+
+    from bispikclm.models import BiSpikConfig, BiSpikForCausalLM
+
+    config = BiSpikConfig(
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=8,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=4,
+        num_steps=4,
+        input_scale=10.0,
+    )
+    model = BiSpikForCausalLM(config)
+    input_ids = torch.tensor([[2, 3, 1]])
+    attention_mask = torch.tensor([[1, 1, 0]], dtype=torch.long)
+    with torch.no_grad():
+        model.model.token_embedding.weight.copy_(
+            torch.arange(config.vocab_size * config.hidden_size, dtype=torch.float32).view(
+                config.vocab_size, config.hidden_size
+            )
+            / 100.0
+        )
+        model.model.position_embeddings.weight.copy_(
+            torch.arange(config.max_position_embeddings * config.hidden_size, dtype=torch.float32).view(
+                config.max_position_embeddings, config.hidden_size
+            )
+            / 1000.0
+        )
+
+    output = model.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
+    positions = torch.arange(input_ids.shape[-1]).unsqueeze(0)
+    raw_embedding = model.model.token_embedding(input_ids) + model.model.position_embeddings(positions)
+    raw_embedding = raw_embedding * attention_mask.unsqueeze(-1).to(raw_embedding.dtype)
+    input_spikes = output["hidden_states"][0]
+
+    assert torch.allclose(output["embedding_states"].mean(dim=0), raw_embedding)
+    assert torch.equal(input_spikes, input_spikes.bool().to(input_spikes.dtype))
+    assert not torch.allclose(input_spikes.float().mean(dim=0), raw_embedding)
+
+
 def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     import torch
 
