@@ -14,7 +14,7 @@ tau = 0.9
 membrane_decay = 0.9
 spike_surrogate = "arctan"
 surrogate_alpha = 2.0
-readout_scale = 2.0
+readout_scale = 1.0
 teacher_model_id = "facebook/opt-1.3b"
 
 [distillation]

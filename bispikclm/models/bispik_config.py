@@ -20,5 +20,5 @@ class BiSpikConfig:
     surrogate_alpha: float = 2.0
     initializer_range: float = 0.02
     input_scale: float | None = None
-    readout_scale: float = 2.0
+    readout_scale: float = 1.0
     teacher_model_id: str = "facebook/opt-125m"

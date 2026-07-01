@@ -28,7 +28,7 @@ def test_table3_config_file_is_loaded_and_propagated() -> None:
     assert config.distillation.lambda_emb == 0.2
     assert config.model.spike_threshold == 0.7
     assert config.model.surrogate_alpha == 2.0
-    assert config.model.readout_scale == 2.0
+    assert config.model.readout_scale == 1.0
     assert config.training.time_steps in (2, 4)
     assert config.training.target_tokens == 1_000_000_000
 
@@ -53,7 +53,7 @@ def test_three_opt_scale_configs_are_ready_for_training() -> None:
         assert config.training.warmup_ratio == 0.2
         assert config.training.gradient_clip == 0.7
         assert config.model.spike_threshold == 0.7
-        assert config.model.readout_scale == 2.0
+        assert config.model.readout_scale == 1.0
         assert resolve_max_steps(config.training, world_size=8) == 239
 
 
