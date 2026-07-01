@@ -64,10 +64,10 @@ else:
             step_hidden_states = [] if output_hidden_states else None
             step_attentions = [] if output_attentions else None
             step_spike_stats = [] if return_spike_stats else None
+            temporal_input_scale = float(self.config.num_steps + 1) / float(2 * self.config.num_steps)
 
             for step in range(self.config.num_steps):
-                step_scale = float(step + 1) / float(self.config.num_steps)
-                hidden_state = base_embedding * step_scale
+                hidden_state = base_embedding * temporal_input_scale
                 hidden_states = [hidden_state] if output_hidden_states else None
                 attentions = [] if output_attentions else None
                 spike_stats = [] if return_spike_stats else None
@@ -94,7 +94,7 @@ else:
                     if spike_stats is not None:
                         spike_stats.append(layer_spike_stats)
 
-                step_embeddings.append(hidden_states[0] if hidden_states is not None else base_embedding * step_scale)
+                step_embeddings.append(hidden_states[0] if hidden_states is not None else hidden_state)
                 step_last_hidden_states.append(hidden_state)
                 if step_hidden_states is not None:
                     step_hidden_states.append(tuple(hidden_states))
