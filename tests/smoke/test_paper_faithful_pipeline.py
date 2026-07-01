@@ -177,9 +177,22 @@ def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
             decoder=SimpleNamespace(
                 embed_tokens=torch.nn.Embedding(vocab_size, hidden_size),
                 embed_positions=torch.nn.Embedding(max_positions + 2, hidden_size),
+                final_layer_norm=torch.nn.LayerNorm(hidden_size),
+                layers=torch.nn.ModuleList([torch.nn.Module()]),
             )
         ),
     )
+    teacher_layer = teacher.model.decoder.layers[0]
+    teacher_layer.self_attn = SimpleNamespace(
+        q_proj=torch.nn.Linear(hidden_size, hidden_size),
+        k_proj=torch.nn.Linear(hidden_size, hidden_size),
+        v_proj=torch.nn.Linear(hidden_size, hidden_size),
+        out_proj=torch.nn.Linear(hidden_size, hidden_size),
+    )
+    teacher_layer.self_attn_layer_norm = torch.nn.LayerNorm(hidden_size)
+    teacher_layer.fc1 = torch.nn.Linear(hidden_size, 8)
+    teacher_layer.fc2 = torch.nn.Linear(8, hidden_size)
+    teacher_layer.final_layer_norm = torch.nn.LayerNorm(hidden_size)
     with torch.no_grad():
         teacher.model.decoder.embed_tokens.weight.copy_(
             torch.arange(vocab_size * hidden_size, dtype=torch.float32).view(vocab_size, hidden_size)
@@ -187,17 +200,46 @@ def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
         teacher.model.decoder.embed_positions.weight.copy_(
             torch.arange((max_positions + 2) * hidden_size, dtype=torch.float32).view(max_positions + 2, hidden_size)
         )
+        teacher_layer.self_attn.q_proj.weight.fill_(0.11)
+        teacher_layer.self_attn.k_proj.weight.fill_(0.12)
+        teacher_layer.self_attn.v_proj.weight.fill_(0.13)
+        teacher_layer.self_attn.out_proj.weight.fill_(0.14)
+        teacher_layer.fc1.weight.fill_(0.21)
+        teacher_layer.fc1.bias.fill_(0.22)
+        teacher_layer.fc2.weight.fill_(0.23)
+        teacher_layer.fc2.bias.fill_(0.24)
+        teacher_layer.self_attn_layer_norm.weight.fill_(0.31)
+        teacher_layer.self_attn_layer_norm.bias.fill_(0.32)
+        teacher_layer.final_layer_norm.weight.fill_(0.33)
+        teacher_layer.final_layer_norm.bias.fill_(0.34)
+        teacher.model.decoder.final_layer_norm.weight.fill_(0.41)
+        teacher.model.decoder.final_layer_norm.bias.fill_(0.42)
 
     student, _, _ = build_student_from_teacher(
         teacher,
         TrainingConfig(time_steps=2, teacher_model="facebook/opt-125m", sequence_length=max_positions),
     )
+    student_layer = student.model.layers[0]
 
     assert torch.equal(student.model.token_embedding.weight, teacher.model.decoder.embed_tokens.weight)
     assert torch.equal(
         student.model.position_embeddings.weight,
         teacher.model.decoder.embed_positions.weight[2 : max_positions + 2],
     )
+    assert torch.equal(student_layer.attention.q_proj.weight, teacher_layer.self_attn.q_proj.weight)
+    assert torch.equal(student_layer.attention.k_proj.weight, teacher_layer.self_attn.k_proj.weight)
+    assert torch.equal(student_layer.attention.v_proj.weight, teacher_layer.self_attn.v_proj.weight)
+    assert torch.equal(student_layer.attention.out_proj.weight, teacher_layer.self_attn.out_proj.weight)
+    assert torch.equal(student_layer.mlp.fc1.weight, teacher_layer.fc1.weight)
+    assert torch.equal(student_layer.mlp.fc1.bias, teacher_layer.fc1.bias)
+    assert torch.equal(student_layer.mlp.fc2.weight, teacher_layer.fc2.weight)
+    assert torch.equal(student_layer.mlp.fc2.bias, teacher_layer.fc2.bias)
+    assert torch.equal(student_layer.attention_norm.weight, teacher_layer.self_attn_layer_norm.weight)
+    assert torch.equal(student_layer.attention_norm.bias, teacher_layer.self_attn_layer_norm.bias)
+    assert torch.equal(student_layer.mlp_norm.weight, teacher_layer.final_layer_norm.weight)
+    assert torch.equal(student_layer.mlp_norm.bias, teacher_layer.final_layer_norm.bias)
+    assert torch.equal(student.final_layer_norm.weight, teacher.model.decoder.final_layer_norm.weight)
+    assert torch.equal(student.final_layer_norm.bias, teacher.model.decoder.final_layer_norm.bias)
     assert student.lm_head.weight.data_ptr() == student.model.token_embedding.weight.data_ptr()
 
 
