@@ -35,6 +35,7 @@ else:
             super().__init__()
             if student_dim == teacher_dim:
                 self.proj = nn.Identity()
+                self.norm = nn.Identity()
             else:
                 hidden_dim = max(student_dim, teacher_dim)
                 self.proj = nn.Sequential(
@@ -42,7 +43,7 @@ else:
                     nn.GELU(),
                     nn.Linear(hidden_dim, teacher_dim, bias=False),
                 )
-            self.norm = nn.LayerNorm(teacher_dim)
+                self.norm = nn.LayerNorm(teacher_dim)
 
         def forward(self, tensor: torch.Tensor) -> torch.Tensor:
             return self.norm(self.proj(tensor))

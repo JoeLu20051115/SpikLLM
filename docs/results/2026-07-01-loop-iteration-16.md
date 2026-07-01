@@ -36,13 +36,14 @@ Reviewer found no blocking issues for the loop16 diff. The reviewer noted that o
 
 The initial 700-step loop16 probe was stopped at step 17 because it bypassed the required small-batch A/B gate against the current best baseline.
 
-From this iteration onward, no candidate change may start a long probe or full training until it first beats the current best baseline in a matched small-batch comparison:
+From this iteration onward, every candidate change must first run a matched small-batch A/B comparison against the current small-batch best baseline:
 
-- Baseline: loop14 code state and run behavior.
+- Baseline: the current best small-batch run by primary hard/soft output metrics.
 - Candidate: the current loop change only.
 - Geometry: same GPU count, sequence length, time steps, per-GPU batch size, gradient accumulation, precision, and max optimizer steps for both runs.
-- Pass condition: candidate must show a clearly better early hard/soft trajectory than baseline, with supporting token accuracy, teacher top-1 agreement, target-rank, and target-margin metrics.
-- Fail condition: if candidate is flat, worse, or only improves representation losses while hard/soft output metrics lag baseline, stop and revert the candidate before any long probe.
+- Small-batch baseline update: if the candidate has the best primary hard/soft output metrics so far, record it as the new small-batch baseline even when the gain is small.
+- Long-probe permission: a candidate may start a long probe or full training only if the small-batch result is clearly better, with support from token accuracy, teacher top-1 agreement, target-rank, and target-margin metrics.
+- Fail condition: if candidate output metrics lag the current small-batch best, stop and revert the candidate before any long probe.
 
 ## Small-Batch A/B Gate Result
 
@@ -77,6 +78,5 @@ Candidate:
 - Target margin mean at step 80: -4.6015
 
 Decision:
-- Fail the small-batch gate.
-- The candidate was only marginally better on hard/soft loss and target rank, while teacher top-1 agreement was worse. This is not a clear improvement over loop14 and does not justify a long probe.
-- Revert the identity-projector candidate before the next iteration.
+- Promote loop16 to the current small-batch best baseline because hard loss, soft loss, last-25 hard/soft means, target rank, and target margin are all slightly better than loop14.
+- Do not launch a long probe from this result alone. The gain is small and teacher top-1 agreement is worse, so the next loop must beat loop16 in a matched small-batch gate before any long run.

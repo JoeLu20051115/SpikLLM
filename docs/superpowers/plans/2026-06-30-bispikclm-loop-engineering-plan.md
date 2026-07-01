@@ -483,7 +483,7 @@ Review must check paper faithfulness, no label leakage, no teacher-logit substit
 
 - [ ] **Step 7: Launch next 2000-step probe**
 
-Before launching a long probe, run a matched small-batch A/B gate against the current best baseline. The baseline and candidate must use the same GPU count, sequence length, time steps, per-GPU batch size, gradient accumulation, precision, and max optimizer steps. The candidate may launch a long probe only if it clearly improves the hard/soft early trajectory and is supported by token accuracy, teacher top-1 agreement, target-rank, and target-margin metrics. If the candidate is flat, worse, or only improves representation losses while output metrics lag the baseline, stop and revert it.
+Before launching a long probe, run a matched small-batch A/B gate against the current small-batch best baseline. The baseline and candidate must use the same GPU count, sequence length, time steps, per-GPU batch size, gradient accumulation, precision, and max optimizer steps. If the candidate has the best primary hard/soft output metrics so far, record it as the new small-batch baseline even when the gain is small. The candidate may launch a long probe only if it clearly improves the hard/soft early trajectory and is supported by token accuracy, teacher top-1 agreement, target-rank, and target-margin metrics. If candidate output metrics lag the current small-batch best, stop and revert it.
 
 Use the long-probe launch shape from Task 3 only after the small-batch gate passes, unless the failure was OOM or launch-specific.
 

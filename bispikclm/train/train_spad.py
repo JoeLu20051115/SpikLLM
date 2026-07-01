@@ -326,6 +326,10 @@ def average_loss_snapshots(snapshots: list[dict[str, float]]) -> dict[str, float
     return {name: sum(snapshot[name] for snapshot in snapshots) / len(snapshots) for name in names}
 
 
+def _has_trainable_parameters(module: nn.Module) -> bool:
+    return any(parameter.requires_grad for parameter in module.parameters())
+
+
 def _save_checkpoint(
     path: Path,
     student: nn.Module,
@@ -399,8 +403,10 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
     if distributed:
         ddp_kwargs = {"device_ids": [local_rank]} if torch.cuda.is_available() else {}
         student = torch.nn.parallel.DistributedDataParallel(student, **ddp_kwargs)
-        embedding_projector = torch.nn.parallel.DistributedDataParallel(embedding_projector, **ddp_kwargs)
-        hidden_projector = torch.nn.parallel.DistributedDataParallel(hidden_projector, **ddp_kwargs)
+        if _has_trainable_parameters(embedding_projector):
+            embedding_projector = torch.nn.parallel.DistributedDataParallel(embedding_projector, **ddp_kwargs)
+        if _has_trainable_parameters(hidden_projector):
+            hidden_projector = torch.nn.parallel.DistributedDataParallel(hidden_projector, **ddp_kwargs)
 
     optimizer = torch.optim.Adam(
         list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters()),
