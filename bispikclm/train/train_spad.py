@@ -186,30 +186,7 @@ def build_student_config_from_teacher_config(
     )
 
 
-def initialize_student_from_teacher(student: BiSpikForCausalLM, teacher: nn.Module) -> None:
-    def copy_parameter(target: torch.Tensor, source: torch.Tensor | None) -> None:
-        if source is None:
-            return
-        source = source.detach()
-        if target.shape == source.shape:
-            target.copy_(source)
-            return
-        slices = tuple(slice(0, min(left, right)) for left, right in zip(target.shape, source.shape, strict=True))
-        target[slices].copy_(source[slices])
-
-    def copy_linear(target: nn.Linear, source: nn.Linear | None, *, copy_bias: bool = True) -> None:
-        if source is None:
-            return
-        copy_parameter(target.weight, getattr(source, "weight", None))
-        if copy_bias and target.bias is not None:
-            copy_parameter(target.bias, getattr(source, "bias", None))
-
-    def copy_layer_norm(target: nn.LayerNorm, source: nn.LayerNorm | None) -> None:
-        if source is None:
-            return
-        copy_parameter(target.weight, getattr(source, "weight", None))
-        copy_parameter(target.bias, getattr(source, "bias", None))
-
+def initialize_student_embeddings_from_teacher(student: BiSpikForCausalLM, teacher: nn.Module) -> None:
     teacher_decoder = getattr(getattr(teacher, "model", None), "decoder", None)
     teacher_token_embedding = getattr(teacher_decoder, "embed_tokens", None)
     teacher_position_embedding = getattr(teacher_decoder, "embed_positions", None)
@@ -230,19 +207,6 @@ def initialize_student_from_teacher(student: BiSpikForCausalLM, teacher: nn.Modu
                 position_target[:position_count, :hidden_size].copy_(
                     position_source[opt_offset : opt_offset + position_count, :hidden_size]
                 )
-        teacher_layers = getattr(teacher_decoder, "layers", None)
-        if teacher_layers is not None:
-            for student_layer, teacher_layer in zip(student.model.layers, teacher_layers, strict=False):
-                teacher_attention = getattr(teacher_layer, "self_attn", None)
-                copy_linear(student_layer.attention.q_proj, getattr(teacher_attention, "q_proj", None), copy_bias=False)
-                copy_linear(student_layer.attention.k_proj, getattr(teacher_attention, "k_proj", None), copy_bias=False)
-                copy_linear(student_layer.attention.v_proj, getattr(teacher_attention, "v_proj", None), copy_bias=False)
-                copy_linear(student_layer.attention.out_proj, getattr(teacher_attention, "out_proj", None), copy_bias=False)
-                copy_linear(student_layer.mlp.fc1, getattr(teacher_layer, "fc1", None))
-                copy_linear(student_layer.mlp.fc2, getattr(teacher_layer, "fc2", None))
-                copy_layer_norm(student_layer.attention_norm, getattr(teacher_layer, "self_attn_layer_norm", None))
-                copy_layer_norm(student_layer.mlp_norm, getattr(teacher_layer, "final_layer_norm", None))
-        copy_layer_norm(student.final_layer_norm, getattr(teacher_decoder, "final_layer_norm", None))
 
 
 def build_student_from_teacher(
@@ -253,7 +217,7 @@ def build_student_from_teacher(
     teacher_config = teacher.config
     student_config = build_student_config_from_teacher_config(teacher_config, train_config, model_config)
     student = BiSpikForCausalLM(student_config)
-    initialize_student_from_teacher(student, teacher)
+    initialize_student_embeddings_from_teacher(student, teacher)
     teacher_dim = getattr(teacher_config, "hidden_size", student_config.hidden_size)
     return (
         student,
