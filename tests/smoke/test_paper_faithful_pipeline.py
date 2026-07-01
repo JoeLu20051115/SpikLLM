@@ -201,6 +201,57 @@ def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
     assert student.lm_head.weight.data_ptr() == student.model.token_embedding.weight.data_ptr()
 
 
+def test_student_final_layer_norm_initializes_from_teacher_readout_only() -> None:
+    from types import SimpleNamespace
+
+    import torch
+
+    from bispikclm.train.train_spad import TrainingConfig, build_student_from_teacher
+
+    hidden_size = 4
+    teacher_final_norm = torch.nn.LayerNorm(hidden_size)
+    teacher_internal_norm = torch.nn.LayerNorm(hidden_size)
+    with torch.no_grad():
+        teacher_final_norm.weight.copy_(torch.tensor([0.5, 1.5, 2.5, 3.5]))
+        teacher_final_norm.bias.copy_(torch.tensor([-0.5, -1.5, -2.5, -3.5]))
+        teacher_internal_norm.weight.fill_(0.25)
+        teacher_internal_norm.bias.fill_(0.75)
+    teacher_layer = torch.nn.Module()
+    teacher_layer.self_attn_layer_norm = teacher_internal_norm
+    teacher_layer.final_layer_norm = teacher_internal_norm
+    teacher = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=8,
+            hidden_size=hidden_size,
+            ffn_dim=8,
+            num_attention_heads=2,
+            num_hidden_layers=1,
+            max_position_embeddings=6,
+            pad_token_id=1,
+            bos_token_id=2,
+            eos_token_id=2,
+        ),
+        model=SimpleNamespace(
+            decoder=SimpleNamespace(
+                embed_tokens=torch.nn.Embedding(8, hidden_size),
+                embed_positions=torch.nn.Embedding(8, hidden_size),
+                final_layer_norm=teacher_final_norm,
+                layers=torch.nn.ModuleList([teacher_layer]),
+            )
+        ),
+    )
+
+    student, _, _ = build_student_from_teacher(
+        teacher,
+        TrainingConfig(time_steps=2, teacher_model="facebook/opt-125m", sequence_length=6),
+    )
+
+    assert torch.equal(student.final_layer_norm.weight, teacher_final_norm.weight)
+    assert torch.equal(student.final_layer_norm.bias, teacher_final_norm.bias)
+    assert not torch.equal(student.model.layers[0].attention_norm.weight, teacher_internal_norm.weight)
+    assert not torch.equal(student.model.layers[0].mlp_norm.weight, teacher_internal_norm.weight)
+
+
 def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     import torch
 
