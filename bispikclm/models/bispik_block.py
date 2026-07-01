@@ -63,7 +63,7 @@ else:
                 tau=1.0 / max(1.0 - self.config.membrane_decay, 1e-6),
                 v_threshold=self.config.spike_threshold,
                 surrogate_function=surrogate.ATan(alpha=self.config.surrogate_alpha),
-                detach_reset=True,
+                detach_reset=False,
                 decay_input=False,
             )
 

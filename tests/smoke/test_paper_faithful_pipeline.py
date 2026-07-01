@@ -222,6 +222,31 @@ def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     assert torch.equal(output["attention_int"], expected_int)
 
 
+def test_spiking_neurons_keep_reset_path_in_bptt() -> None:
+    from bispikclm.models import BiSpikConfig
+    from bispikclm.models.bispik_attention import BiSpikAttention
+    from bispikclm.models.bispik_block import BiSpikBlock
+    from bispikclm.models.bispik_mlp import BiSpikMLP
+
+    config = BiSpikConfig(hidden_size=8, intermediate_size=16, num_attention_heads=2, num_hidden_layers=1)
+    attention = BiSpikAttention(config)
+    mlp = BiSpikMLP(config)
+    block = BiSpikBlock(attention=attention, mlp=mlp, config=config)
+
+    lif_nodes = [
+        attention.q_lif,
+        attention.k_lif,
+        attention.v_lif,
+        attention.attn_lif,
+        attention.attn_out_lif,
+        attention.out_lif,
+        mlp.lif,
+        block.out_lif,
+    ]
+
+    assert all(getattr(node, "detach_reset", None) is False for node in lif_nodes)
+
+
 def test_sffn_lif_uses_configured_spike_threshold() -> None:
     from bispikclm.models import BiSpikConfig
     from bispikclm.models.bispik_mlp import BiSpikMLP

@@ -56,7 +56,7 @@ else:
                 "tau": 1.0 / max(1.0 - config.membrane_decay, 1e-6),
                 "v_threshold": config.spike_threshold,
                 "surrogate_function": surrogate.ATan(alpha=config.surrogate_alpha),
-                "detach_reset": True,
+                "detach_reset": False,
                 "decay_input": False,
             }
             self.q_lif = neuron.LIFNode(**lif_kwargs)
