@@ -209,6 +209,18 @@ def initialize_student_embeddings_from_teacher(student: BiSpikForCausalLM, teach
                 )
 
 
+def initialize_student_final_layer_norm_from_teacher(student: BiSpikForCausalLM, teacher: nn.Module) -> None:
+    teacher_decoder = getattr(getattr(teacher, "model", None), "decoder", None)
+    teacher_norm = getattr(teacher_decoder, "final_layer_norm", None)
+    if teacher_norm is None:
+        return
+    with torch.no_grad():
+        if getattr(teacher_norm, "weight", None) is not None and student.final_layer_norm.weight.shape == teacher_norm.weight.shape:
+            student.final_layer_norm.weight.copy_(teacher_norm.weight.detach())
+        if getattr(teacher_norm, "bias", None) is not None and student.final_layer_norm.bias.shape == teacher_norm.bias.shape:
+            student.final_layer_norm.bias.copy_(teacher_norm.bias.detach())
+
+
 def build_student_from_teacher(
     teacher: nn.Module,
     train_config: TrainingConfig,
@@ -218,6 +230,7 @@ def build_student_from_teacher(
     student_config = build_student_config_from_teacher_config(teacher_config, train_config, model_config)
     student = BiSpikForCausalLM(student_config)
     initialize_student_embeddings_from_teacher(student, teacher)
+    initialize_student_final_layer_norm_from_teacher(student, teacher)
     teacher_dim = getattr(teacher_config, "hidden_size", student_config.hidden_size)
     return (
         student,
