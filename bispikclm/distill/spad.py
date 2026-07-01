@@ -104,8 +104,8 @@ def _rate_encode(tensor: torch.Tensor, threshold: float, membrane_decay: float) 
 
 
 def _attention_rate_drive(attention: torch.Tensor, threshold: float) -> torch.Tensor:
-    row_max = attention.amax(dim=-1, keepdim=True)
-    return attention / row_max.clamp_min(1e-6) * threshold
+    del threshold
+    return attention
 
 
 def _attention_distribution(attention: torch.Tensor) -> torch.Tensor:

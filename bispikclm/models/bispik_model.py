@@ -51,13 +51,13 @@ else:
 
             sequence_length = input_ids.shape[-1]
             positions = torch.arange(sequence_length, device=input_ids.device).unsqueeze(0)
-            base_embedding = self.token_embedding(input_ids) + self.position_embeddings(positions)
+            embedding_state = self.token_embedding(input_ids) + self.position_embeddings(positions)
+            if attention_mask is not None:
+                embedding_state = embedding_state * attention_mask.unsqueeze(-1).to(embedding_state.dtype)
             input_scale = self.config.input_scale
             if input_scale is None:
                 input_scale = 1.0 / max(self.config.initializer_range, 1e-6)
-            base_embedding = base_embedding * input_scale
-            if attention_mask is not None:
-                base_embedding = base_embedding * attention_mask.unsqueeze(-1).to(base_embedding.dtype)
+            base_embedding = embedding_state * input_scale
 
             step_embeddings = []
             step_last_hidden_states = []
@@ -94,7 +94,7 @@ else:
                     if spike_stats is not None:
                         spike_stats.append(layer_spike_stats)
 
-                step_embeddings.append(hidden_states[0] if hidden_states is not None else base_embedding * step_scale)
+                step_embeddings.append(embedding_state)
                 step_last_hidden_states.append(hidden_state)
                 if step_hidden_states is not None:
                     step_hidden_states.append(tuple(hidden_states))

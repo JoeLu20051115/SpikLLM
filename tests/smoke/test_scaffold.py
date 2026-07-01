@@ -70,13 +70,14 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert output["loss"].ndim == 0
     assert len(output["hidden_states"]) == config.num_hidden_layers + 1
     assert output["hidden_states"][0].shape == (config.num_steps, 2, 8, config.hidden_size)
+    assert not torch.allclose(output["hidden_states"][0][0], output["hidden_states"][0][1])
     assert not torch.allclose(output["hidden_states"][-1][0], output["hidden_states"][-1][1])
     assert len(output["attentions"]) == config.num_hidden_layers
     assert output["attentions"][0].shape == (config.num_steps, 2, config.num_attention_heads, 8, 8)
     assert torch.equal(output["attentions"][0], output["attentions"][0].bool().to(output["attentions"][0].dtype))
     assert len(output["spike_stats"]) == config.num_hidden_layers
     assert output["embedding_states"].shape == (config.num_steps, 2, 8, config.hidden_size)
-    assert not torch.allclose(output["embedding_states"][0], output["embedding_states"][1])
+    assert torch.allclose(output["embedding_states"][0], output["embedding_states"][1])
     assert torch.count_nonzero(output["embedding_states"][:, :, 6:, :]) == 0
 
     assert minimal_output["hidden_states"] is None
@@ -92,6 +93,37 @@ def test_lm_uses_transformer_scale_embedding_initialization() -> None:
 
     assert model.lm_head.weight.data_ptr() == model.model.token_embedding.weight.data_ptr()
     assert 0.01 < embedding_std < 0.08
+
+
+def test_spad_alignment_inputs_match_teacher_scales() -> None:
+    import torch
+
+    from bispikclm.distill.spad import _attention_rate_drive, temporal_fusion
+
+    teacher_attention = torch.tensor([[[[0.20, 0.10], [0.05, 0.25]]]])
+    assert torch.equal(_attention_rate_drive(teacher_attention, threshold=0.7), teacher_attention)
+
+    config = BiSpikConfig(
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=8,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=8,
+        num_steps=4,
+        input_scale=50.0,
+    )
+    model = BiSpikForCausalLM(config)
+    with torch.no_grad():
+        model.model.token_embedding.weight.copy_(torch.arange(32, dtype=torch.float32).view(8, 4) / 100)
+        model.model.position_embeddings.weight.zero_()
+    input_ids = torch.tensor([[2, 3, 4]])
+
+    output = model(input_ids=input_ids, output_hidden_states=True)
+    raw_embedding = model.model.token_embedding(input_ids) + model.model.position_embeddings(torch.arange(3).unsqueeze(0))
+
+    assert torch.allclose(temporal_fusion(output["embedding_states"]), raw_embedding)
+    assert torch.allclose(output["hidden_states"][0][-1], raw_embedding * config.input_scale)
 
 
 def test_attention_path_is_tensor_native_and_softmax_free() -> None:
