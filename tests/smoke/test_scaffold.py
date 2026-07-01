@@ -440,6 +440,18 @@ def test_spad_soft_loss_is_zero_when_all_targets_are_ignored() -> None:
     assert losses["total_loss"].item() == 0.0
 
 
+def test_spad_teacher_attention_rate_drive_preserves_probability_scale() -> None:
+    import torch
+
+    from bispikclm.distill.spad import _attention_rate_drive
+
+    teacher_attention = torch.tensor([[[[0.20, 0.10], [0.05, 0.25]]]])
+
+    driven = _attention_rate_drive(teacher_attention, threshold=0.7)
+
+    assert torch.equal(driven, teacher_attention)
+
+
 def test_spad_attention_mask_ignores_padding_targets() -> None:
     import torch
 
