@@ -103,6 +103,50 @@ def test_lm_head_applies_configured_readout_scale() -> None:
     assert torch.allclose(scaled_logits, base_logits * 2.0)
 
 
+def test_lm_head_temporally_fuses_step_logits_after_layer_norm(monkeypatch) -> None:
+    import torch
+
+    from bispikclm.models import BiSpikConfig, BiSpikForCausalLM
+
+    config = BiSpikConfig(
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=8,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=4,
+        num_steps=2,
+    )
+    model = BiSpikForCausalLM(config)
+    hidden_steps = torch.tensor(
+        [
+            [[[0.0, 1.0, 2.0, 4.0], [1.0, 0.0, 3.0, 2.0]]],
+            [[[4.0, 2.0, 1.0, 0.0], [0.0, 3.0, 1.0, 2.0]]],
+        ]
+    )
+
+    def fake_model_forward(*args, **kwargs):
+        del args, kwargs
+        return {
+            "last_hidden_state": hidden_steps.mean(dim=0),
+            "hidden_states": (hidden_steps,),
+            "attentions": None,
+            "spike_stats": None,
+            "embedding_states": hidden_steps,
+        }
+
+    monkeypatch.setattr(model.model, "forward", fake_model_forward)
+
+    output = model(torch.tensor([[1, 2]]), output_hidden_states=True)
+    expected = model.lm_head(model.final_layer_norm(hidden_steps)).mean(dim=0) * model.readout_log_scale.exp()
+    mean_hidden_logits = (
+        model.lm_head(model.final_layer_norm(hidden_steps.mean(dim=0))) * model.readout_log_scale.exp()
+    )
+
+    assert not torch.allclose(expected, mean_hidden_logits)
+    assert torch.allclose(output["logits"], expected)
+
+
 def test_fineweb_streaming_sequence_packing_builds_real_batches() -> None:
     from bispikclm.data.fineweb import SequencePackingIterableDataset, collate_packed_sequences
 

@@ -49,13 +49,20 @@ else:
             model_output = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                output_hidden_states=output_hidden_states,
+                output_hidden_states=True,
                 output_attentions=output_attentions,
                 return_spike_stats=return_spike_stats,
             )
-            last_hidden_state = model_output["last_hidden_state"]
-            assert isinstance(last_hidden_state, torch.Tensor)
-            logits = self.lm_head(self.final_layer_norm(last_hidden_state)) * self.readout_log_scale.exp()
+            hidden_states = model_output.get("hidden_states")
+            if not isinstance(hidden_states, tuple) or not hidden_states:
+                raise TypeError("BiSpikModel must return temporal hidden states for LM readout")
+            last_hidden_steps = hidden_states[-1]
+            assert isinstance(last_hidden_steps, torch.Tensor)
+            if last_hidden_steps.ndim == 4:
+                step_logits = self.lm_head(self.final_layer_norm(last_hidden_steps))
+                logits = step_logits.mean(dim=0) * self.readout_log_scale.exp()
+            else:
+                logits = self.lm_head(self.final_layer_norm(last_hidden_steps)) * self.readout_log_scale.exp()
             loss = None
             if labels is not None:
                 shift_logits = logits[..., :-1, :].contiguous()
@@ -70,7 +77,7 @@ else:
                 )
             return {
                 "logits": logits,
-                "hidden_states": model_output.get("hidden_states"),
+                "hidden_states": hidden_states if output_hidden_states else None,
                 "attentions": model_output.get("attentions"),
                 "spike_stats": model_output.get("spike_stats"),
                 "embedding_states": model_output.get("embedding_states"),
