@@ -63,4 +63,19 @@ Fail the loop35 candidate. The fixed-batch screen improved, and last-25 hard los
 
 Do not merge loop35 code into `main`, and do not launch a long probe. Keep loop16 as the current small-batch best baseline.
 
+## Baseline Refresh
+
+Because loop35 was close on last-25 hard loss, reran the loop16 baseline with the same seed, code, and gate geometry:
+
+- Run: `loop16-refresh-small-seq512-bs2-ga16-1xh200-20260702-001801`
+- W&B: https://wandb.ai/luenqiao2005-agency-for-science-technology-and-research/bispikclm/runs/1f8plmtv
+- Step 80 hard/soft: 7.45319 / 4.51955
+- Last 25-step hard/soft means: 7.77983 / 4.29321
+- Token accuracy at step 80: 4.79%
+- Teacher top-1 agreement at step 80: 6.07%
+- Target rank mean at step 80: 4162.4
+- Target margin mean at step 80: -4.6015
+
+This reproduces the original loop16 gate (`cvxuw267`) to rounding precision, so the loop35 failure is not explained by streaming-data variance.
+
 Next direction: attention sparsity alone is insufficient. The next loop should inspect why fixed-batch improvements are not transferring to the streaming gate, with special attention to whether the streaming gate variance or dataset order is masking small candidate effects.
