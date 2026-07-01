@@ -46,10 +46,12 @@ else:
                 raise ValueError("hidden_size must be divisible by num_attention_heads")
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // config.num_attention_heads
-            self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
-            self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
-            self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
-            self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
+            self.q_proj = nn.Linear(config.hidden_size, config.hidden_size)
+            self.k_proj = nn.Linear(config.hidden_size, config.hidden_size)
+            self.v_proj = nn.Linear(config.hidden_size, config.hidden_size)
+            self.out_proj = nn.Linear(config.hidden_size, config.hidden_size)
+            for projection in (self.q_proj, self.k_proj, self.v_proj, self.out_proj):
+                projection.bias.data.zero_()
             if neuron is None or surrogate is None:
                 raise ImportError("BiSpikAttention requires spikingjelly for LIF activation")
             lif_kwargs = {

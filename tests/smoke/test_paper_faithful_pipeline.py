@@ -222,6 +222,20 @@ def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     assert torch.equal(output["attention_int"], expected_int)
 
 
+def test_sfsa_projection_biases_are_trainable_and_zero_initialized() -> None:
+    import torch
+
+    from bispikclm.models import BiSpikConfig
+    from bispikclm.models.bispik_attention import BiSpikAttention
+
+    attention = BiSpikAttention(BiSpikConfig(hidden_size=8, num_attention_heads=2))
+
+    for projection in (attention.q_proj, attention.k_proj, attention.v_proj, attention.out_proj):
+        assert projection.bias is not None
+        assert projection.bias.requires_grad
+        assert torch.count_nonzero(projection.bias.detach()) == 0
+
+
 def test_sffn_lif_uses_configured_spike_threshold() -> None:
     from bispikclm.models import BiSpikConfig
     from bispikclm.models.bispik_mlp import BiSpikMLP
