@@ -342,6 +342,39 @@ def test_spad_soft_loss_is_token_averaged() -> None:
     assert torch.isclose(repeated, base, rtol=1e-5, atol=1e-5)
 
 
+def test_spad_attention_alignment_uses_raw_mse_not_distribution_mse() -> None:
+    import torch
+    import torch.nn.functional as F
+
+    config = SpADConfig(
+        lambda_emb=0.0,
+        lambda_attn=1.0,
+        lambda_feat=0.0,
+        lambda_soft=0.0,
+        lambda_hard=0.0,
+        gamma_attn=0.0,
+    )
+    student_attention = torch.tensor([[[[[0.0, 2.0], [1.0, 0.0]]]]], requires_grad=True)
+    teacher_attention = torch.tensor([[[[0.0, 1.0], [0.5, 0.5]]]])
+    student_outputs = {
+        "embedding_states": torch.zeros(1, 1, 2, 4, requires_grad=True),
+        "hidden_states": (torch.zeros(1, 1, 2, 4, requires_grad=True),),
+        "attentions": (student_attention,),
+        "logits": torch.zeros(1, 2, 8, requires_grad=True),
+    }
+    teacher_outputs = {
+        "hidden_states": (torch.zeros(1, 2, 4),),
+        "attentions": (teacher_attention,),
+        "logits": torch.zeros(1, 2, 8),
+    }
+
+    losses = compute_multilevel_distillation(student_outputs, teacher_outputs, config)
+    raw_mse = F.mse_loss(student_attention.mean(dim=0), teacher_attention)
+
+    assert torch.isclose(losses["attention_mse_loss"], raw_mse)
+    assert torch.isclose(losses["attention_loss"], raw_mse)
+
+
 def test_spad_soft_loss_uses_next_token_mask() -> None:
     import torch
     import torch.nn.functional as F

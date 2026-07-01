@@ -170,8 +170,8 @@ def compute_multilevel_distillation(
             membrane_decay,
         )
         student_rate, teacher_rate = _align_attention(student_attention, teacher_rate)
-        attention_rate_losses.append(_attention_distribution_mse(student_rate, teacher_rate))
-        attention_mse_losses.append(_attention_distribution_mse(student_attention, teacher_attention))
+        attention_rate_losses.append(F.mse_loss(student_rate, teacher_rate))
+        attention_mse_losses.append(F.mse_loss(student_attention, teacher_attention))
     attention_rate_loss = torch.stack(attention_rate_losses).mean()
     attention_mse_loss = torch.stack(attention_mse_losses).mean()
     attn_loss = config.gamma_attn * attention_rate_loss + (1.0 - config.gamma_attn) * attention_mse_loss
