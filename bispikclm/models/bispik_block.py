@@ -96,11 +96,12 @@ else:
             if isinstance(hidden_state, torch.Tensor):
                 attention_residual = hidden_state + attended
                 transformed = _call_forward(self.mlp, self.mlp_norm(attention_residual))
-                hidden_state = self.out_lif(attention_residual + transformed)
+                hidden_state = attention_residual + transformed
+                output_spikes = self.out_lif(hidden_state)
                 spike_stats = None
                 if return_spike_stats:
                     spike_stats = {
-                        "spike_rate": hidden_state.mean(),
+                        "spike_rate": output_spikes.mean(),
                         "membrane_mean": (hidden_state * self.membrane_decay).mean(),
                     }
                 if return_attention or return_spike_stats:

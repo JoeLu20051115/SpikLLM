@@ -213,6 +213,36 @@ def test_block_tensor_path_uses_attention_then_mlp_residuals() -> None:
     assert torch.equal(output, torch.full_like(hidden_state, 4.0))
 
 
+def test_block_preserves_analog_residual_output_while_reporting_spike_stats() -> None:
+    import torch
+
+    class AddOneAttention:
+        config = BiSpikConfig(hidden_size=4, num_attention_heads=1)
+
+        def __call__(self, hidden_state, **kwargs):
+            del kwargs
+            return {"context": hidden_state + 1.0, "attention_spikes": None}
+
+    class AddTwoMLP:
+        def __call__(self, hidden_state):
+            return hidden_state + 2.0
+
+    class ZeroSpikes(torch.nn.Module):
+        def forward(self, hidden_state):
+            return torch.zeros_like(hidden_state)
+
+    block = BiSpikBlock(AddOneAttention(), AddTwoMLP(), config=BiSpikConfig(hidden_size=4, num_attention_heads=1))
+    block.attention_norm = torch.nn.Identity()
+    block.mlp_norm = torch.nn.Identity()
+    block.out_lif = ZeroSpikes()
+    hidden_state = torch.zeros(1, 2, 4)
+
+    output, _, spike_stats = block(hidden_state, return_spike_stats=True)
+
+    assert torch.equal(output, torch.full_like(hidden_state, 4.0))
+    assert spike_stats["spike_rate"].item() == 0.0
+
+
 def test_block_forward_rejects_shape_mismatch() -> None:
     class ShortMLP:
         def forward(self, hidden_state: list[float]) -> list[float]:
