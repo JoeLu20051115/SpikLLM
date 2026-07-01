@@ -330,6 +330,38 @@ def _has_trainable_parameters(module: nn.Module) -> bool:
     return any(parameter.requires_grad for parameter in module.parameters())
 
 
+def clip_grad_norm_stable(
+    parameters,
+    max_norm: float,
+    norm_type: float = 2.0,
+) -> torch.Tensor:
+    params = list(parameters)
+    grads = [parameter.grad.detach() for parameter in params if parameter.grad is not None]
+    if not grads:
+        return torch.tensor(0.0)
+
+    device = grads[0].device
+    norm_type = float(norm_type)
+    if norm_type == float("inf"):
+        total_norm = torch.stack(
+            [grad.abs().max().to(device=device, dtype=torch.float64) for grad in grads]
+        ).max()
+    else:
+        total = torch.zeros((), device=device, dtype=torch.float64)
+        for grad in grads:
+            grad_norm = grad.to(dtype=torch.float64).norm(norm_type)
+            total = total + grad_norm.pow(norm_type)
+        total_norm = total.pow(1.0 / norm_type)
+
+    clip_coef = torch.as_tensor(float(max_norm), device=device, dtype=torch.float64) / (total_norm + 1e-6)
+    if torch.isfinite(clip_coef) and clip_coef < 1.0:
+        for parameter in params:
+            if parameter.grad is not None:
+                scale = clip_coef.to(device=parameter.grad.device, dtype=parameter.grad.dtype)
+                parameter.grad.detach().mul_(scale)
+    return total_norm.to(device=device, dtype=torch.float32)
+
+
 def _save_checkpoint(
     path: Path,
     student: nn.Module,
@@ -408,8 +440,11 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
         if _has_trainable_parameters(hidden_projector):
             hidden_projector = torch.nn.parallel.DistributedDataParallel(hidden_projector, **ddp_kwargs)
 
+    trainable_parameters = (
+        list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters())
+    )
     optimizer = torch.optim.Adam(
-        list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters()),
+        trainable_parameters,
         lr=config.training.learning_rate,
     )
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -519,10 +554,7 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
                     if should_log
                     else {}
                 )
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters()),
-                    config.training.gradient_clip,
-                )
+                grad_norm = clip_grad_norm_stable(trainable_parameters, config.training.gradient_clip)
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -619,7 +651,7 @@ def train_dummy_batch(train_config: TrainingConfig, distill_config: SpADConfig |
             membrane_decay=student.config.membrane_decay,
         )
         losses["total_loss"].backward()
-        torch.nn.utils.clip_grad_norm_(trainable_parameters, train_config.gradient_clip)
+        clip_grad_norm_stable(trainable_parameters, train_config.gradient_clip)
         optimizer.step()
         scheduler.step()
         snapshots.append({name: float(value.detach().cpu()) for name, value in losses.items()})

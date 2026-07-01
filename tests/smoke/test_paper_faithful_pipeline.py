@@ -387,3 +387,22 @@ def test_spad_attention_loss_penalizes_zero_student_attention_distribution() -> 
     )
 
     assert losses["attention_loss"] > 0.05
+
+
+def test_stable_gradient_clip_preserves_huge_finite_gradient_direction() -> None:
+    import pytest
+    import torch
+
+    from bispikclm.train.train_spad import clip_grad_norm_stable
+
+    parameter = torch.nn.Parameter(torch.zeros(2, dtype=torch.float32))
+    parameter.grad = torch.tensor([1e20, -1e20], dtype=torch.float32)
+
+    total_norm = clip_grad_norm_stable([parameter], 0.7)
+
+    assert torch.isfinite(total_norm)
+    assert float(total_norm) == pytest.approx(2**0.5 * 1e20, rel=1e-6)
+    assert torch.isfinite(parameter.grad).all()
+    assert float(parameter.grad.norm()) == pytest.approx(0.7, rel=1e-5)
+    assert parameter.grad[0] > 0
+    assert parameter.grad[1] < 0
