@@ -6,11 +6,13 @@ from .bispik_config import BiSpikConfig
 try:
     import torch
     from torch import nn
-    from spikingjelly.activation_based import functional
+    from spikingjelly.activation_based import functional, neuron, surrogate
 except ImportError:  # pragma: no cover - optional runtime dependency
     torch = None
     nn = None
     functional = None
+    neuron = None
+    surrogate = None
 
 
 if nn is None:  # pragma: no cover - import-time fallback when torch is unavailable
@@ -30,6 +32,15 @@ else:
             self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.layers = nn.ModuleList(
                 BiSpikBlock.from_config(config) for _ in range(config.num_hidden_layers)
+            )
+            if neuron is None or surrogate is None:
+                raise ImportError("BiSpikModel requires spikingjelly for input spike encoding")
+            self.input_lif = neuron.LIFNode(
+                tau=1.0 / max(1.0 - config.membrane_decay, 1e-6),
+                v_threshold=config.spike_threshold,
+                surrogate_function=surrogate.ATan(alpha=config.surrogate_alpha),
+                detach_reset=True,
+                decay_input=False,
             )
             self.token_embedding.weight.data.normal_(mean=0.0, std=config.initializer_range)
             self.position_embeddings.weight.data.normal_(mean=0.0, std=config.initializer_range)
@@ -67,7 +78,8 @@ else:
 
             for step in range(self.config.num_steps):
                 step_scale = float(step + 1) / float(self.config.num_steps)
-                hidden_state = base_embedding * step_scale
+                input_current = base_embedding * step_scale
+                hidden_state = self.input_lif(input_current)
                 hidden_states = [hidden_state] if output_hidden_states else None
                 attentions = [] if output_attentions else None
                 spike_stats = [] if return_spike_stats else None
@@ -94,7 +106,7 @@ else:
                     if spike_stats is not None:
                         spike_stats.append(layer_spike_stats)
 
-                step_embeddings.append(hidden_states[0] if hidden_states is not None else base_embedding * step_scale)
+                step_embeddings.append(input_current)
                 step_last_hidden_states.append(hidden_state)
                 if step_hidden_states is not None:
                     step_hidden_states.append(tuple(hidden_states))

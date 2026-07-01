@@ -70,6 +70,7 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert output["loss"].ndim == 0
     assert len(output["hidden_states"]) == config.num_hidden_layers + 1
     assert output["hidden_states"][0].shape == (config.num_steps, 2, 8, config.hidden_size)
+    assert torch.equal(output["hidden_states"][0], output["hidden_states"][0].bool().to(output["hidden_states"][0].dtype))
     assert not torch.allclose(output["hidden_states"][-1][0], output["hidden_states"][-1][1])
     assert len(output["attentions"]) == config.num_hidden_layers
     assert output["attentions"][0].shape == (config.num_steps, 2, config.num_attention_heads, 8, 8)
@@ -77,6 +78,7 @@ def test_lm_forward_returns_tensor_features() -> None:
     assert len(output["spike_stats"]) == config.num_hidden_layers
     assert output["embedding_states"].shape == (config.num_steps, 2, 8, config.hidden_size)
     assert not torch.allclose(output["embedding_states"][0], output["embedding_states"][1])
+    assert torch.any((output["embedding_states"] != 0.0) & (output["embedding_states"] != 1.0))
     assert torch.count_nonzero(output["embedding_states"][:, :, 6:, :]) == 0
 
     assert minimal_output["hidden_states"] is None
