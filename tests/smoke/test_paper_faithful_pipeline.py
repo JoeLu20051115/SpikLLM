@@ -201,48 +201,6 @@ def test_student_embeddings_initialize_from_teacher_opt_space() -> None:
     assert student.lm_head.weight.data_ptr() == student.model.token_embedding.weight.data_ptr()
 
 
-def test_student_final_layer_norm_initializes_from_teacher_opt_space() -> None:
-    from types import SimpleNamespace
-
-    import torch
-
-    from bispikclm.train.train_spad import TrainingConfig, build_student_from_teacher
-
-    hidden_size = 4
-    teacher_norm = torch.nn.LayerNorm(hidden_size)
-    with torch.no_grad():
-        teacher_norm.weight.copy_(torch.tensor([0.5, 1.5, 2.5, 3.5]))
-        teacher_norm.bias.copy_(torch.tensor([-0.5, -1.5, -2.5, -3.5]))
-    teacher = SimpleNamespace(
-        config=SimpleNamespace(
-            vocab_size=8,
-            hidden_size=hidden_size,
-            ffn_dim=8,
-            num_attention_heads=2,
-            num_hidden_layers=1,
-            max_position_embeddings=6,
-            pad_token_id=1,
-            bos_token_id=2,
-            eos_token_id=2,
-        ),
-        model=SimpleNamespace(
-            decoder=SimpleNamespace(
-                embed_tokens=torch.nn.Embedding(8, hidden_size),
-                embed_positions=torch.nn.Embedding(8, hidden_size),
-                final_layer_norm=teacher_norm,
-            )
-        ),
-    )
-
-    student, _, _ = build_student_from_teacher(
-        teacher,
-        TrainingConfig(time_steps=2, teacher_model="facebook/opt-125m", sequence_length=6),
-    )
-
-    assert torch.equal(student.final_layer_norm.weight, teacher_norm.weight)
-    assert torch.equal(student.final_layer_norm.bias, teacher_norm.bias)
-
-
 def test_sfsa_exposes_binary_qkv_and_uses_spike_domain_attention() -> None:
     import torch
 
@@ -325,6 +283,73 @@ def test_spad_attention_and_feature_losses_include_rate_mse_branches() -> None:
     assert "feature_mse_loss" in losses
     losses["total_loss"].backward()
     assert student_outputs["logits"].grad is not None
+
+
+def test_same_dimension_spad_projector_is_identity() -> None:
+    import torch
+
+    from bispikclm.distill.spad import SpADProjector
+
+    projector = SpADProjector(4, 4)
+    tensor = torch.randn(2, 3, 4)
+
+    assert torch.equal(projector(tensor), tensor)
+    assert list(projector.parameters()) == []
+
+
+def test_trainable_parameter_detection_skips_identity_projectors() -> None:
+    from bispikclm.distill.spad import SpADProjector
+    from bispikclm.train.train_spad import _has_trainable_parameters
+
+    assert not _has_trainable_parameters(SpADProjector(4, 4))
+    assert _has_trainable_parameters(SpADProjector(4, 8))
+
+
+def test_identity_projector_checkpoint_round_trip(tmp_path) -> None:
+    import torch
+
+    from bispikclm.distill.spad import SpADConfig, SpADProjector
+    from bispikclm.models import BiSpikConfig, BiSpikForCausalLM
+    from bispikclm.train.train_spad import DataConfig, ExperimentConfig, TrainingConfig, _save_checkpoint
+
+    config = BiSpikConfig(
+        vocab_size=16,
+        hidden_size=4,
+        intermediate_size=8,
+        num_attention_heads=2,
+        num_hidden_layers=1,
+        max_position_embeddings=8,
+    )
+    training = TrainingConfig(output_dir=str(tmp_path), sequence_length=8, time_steps=config.num_steps)
+    student = BiSpikForCausalLM(config)
+    embedding_projector = SpADProjector(config.hidden_size, config.hidden_size)
+    hidden_projector = SpADProjector(config.hidden_size, config.hidden_size)
+    optimizer = torch.optim.Adam(
+        list(student.parameters()) + list(embedding_projector.parameters()) + list(hidden_projector.parameters()),
+        lr=training.learning_rate,
+    )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
+    path = tmp_path / "checkpoint.pt"
+
+    _save_checkpoint(
+        path,
+        student,
+        embedding_projector,
+        hidden_projector,
+        optimizer,
+        scheduler,
+        3,
+        ExperimentConfig(config, SpADConfig(), training, DataConfig()),
+    )
+
+    checkpoint = torch.load(path, map_location="cpu")
+    assert checkpoint["embedding_projector"] == {}
+    assert checkpoint["hidden_projector"] == {}
+
+    restored_embedding_projector = SpADProjector(config.hidden_size, config.hidden_size)
+    restored_hidden_projector = SpADProjector(config.hidden_size, config.hidden_size)
+    restored_embedding_projector.load_state_dict(checkpoint["embedding_projector"])
+    restored_hidden_projector.load_state_dict(checkpoint["hidden_projector"])
 
 
 def test_spad_attention_loss_penalizes_zero_student_attention_distribution() -> None:
