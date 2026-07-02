@@ -103,3 +103,48 @@ Recent windows:
 | last10 | 9.6633 | 5.9857 | -23.8469 | -22.7021 |
 
 Decision: keep loop82 running. It is still too early to stop, and the last10 hard/soft trend is clearly downward. The below-five continuation rule has not been met yet because hard loss remains above 5.
+
+## Final State - Interrupted At Step 23
+
+The formal three-GPU run stopped before a full continuation/stop decision could be made.
+
+Local status after the stop:
+
+- no `loop82` tmux session remained;
+- no `train_spad` or `torchrun` process remained for this run;
+- GPUs 0, 1, and 2 were free;
+- `output/loop82-loop16-baseline-seq1024-bs4-ga64-3xh200-1bt-20260702-084845` contained no checkpoint files.
+
+The local training log ends with `KeyboardInterrupt` and:
+
+```text
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 1424368 got signal: 2
+```
+
+This is an external `SIGINT`/KeyboardInterrupt termination, not an OOM. Because the run stopped before the first checkpoint interval, it cannot be resumed from a local checkpoint.
+
+Final W&B rows parsed from `wandb/run-20260702_084851-9xwae378/run-9xwae378.wandb`:
+
+- rows: `23`;
+- last step: `23`;
+- latest hard/soft: `8.1601 / 5.1115`;
+- latest total loss: `4.7445`;
+- latest token accuracy: `3.71%`;
+- latest teacher top-1 agreement: `4.81%`;
+- latest top-5 accuracy: `14.86%`;
+- latest target rank mean: `5241.0`;
+- latest target margin mean: `-5.7326`;
+- latest spike rate: `56.95%`;
+- latest readout scale: `0.9995`;
+- latest tokens seen: `18,087,936`.
+
+Recent windows:
+
+| Window | Hard mean | Soft mean | Hard slope/100 | Soft slope/100 |
+| --- | ---: | ---: | ---: | ---: |
+| last5 | 8.2470 | 5.1041 | -6.0610 | -1.7626 |
+| last10 | 8.5076 | 5.1460 | -10.3908 | -1.5680 |
+| last20 | 9.2063 | 5.6716 | -15.4184 | -11.1965 |
+| all23 | 9.5352 | 5.9185 | -17.6168 | -12.9824 |
+
+Decision: incomplete run. The early hard/soft trend was still downward, but the run ended by external interruption before reaching a stable continuation decision or a checkpoint. Keep the current best baseline unchanged and relaunch the loop16/current-source baseline on three GPUs when the GPUs are free.
