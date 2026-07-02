@@ -1,4 +1,4 @@
-# Loop Iteration 90 - Two-GPU Seq512 Baseline In Progress
+# Loop Iteration 90 - Two-GPU Seq512 Baseline Failure
 
 Date: 2026-07-02
 
@@ -23,7 +23,7 @@ This is not the requested three-GPU loop14 geometry.
 - Gradient accumulation: `16`
 - Precision: `bf16`
 
-## Current State At Record Time
+## Interim State At First Record
 
 W&B local parse:
 
@@ -32,3 +32,39 @@ W&B local parse:
 - latest hard/soft: `10.1526 / 6.4478`.
 
 Decision at record time: in progress, but it is not the requested three-GPU baseline. It currently blocks GPUs 0 and 1. A clean three-GPU best-baseline run requires stopping or waiting for this run and the GPU2 screen160 run.
+
+## Final State
+
+The run later failed with the same distributed CUDA illegal-memory-access pattern seen in loop83 and loop87.
+
+Failure excerpt:
+
+```text
+[rank1] Process group watchdog thread terminated with exception: CUDA error: an illegal memory access was encountered
+Root Cause: rank 1 exitcode -6 (SIGABRT)
+```
+
+Final local W&B parse:
+
+- rows: `277`;
+- last step: `277`;
+- latest hard/soft: `7.8301 / 4.4876`;
+- latest total loss: `4.4390`;
+- latest token accuracy: `7.24%`;
+- latest teacher top-1 agreement: `12.92%`;
+- latest top-5 accuracy: `20.35%`;
+- latest target rank mean: `4029.8`;
+- latest target margin mean: `-4.8651`;
+- latest spike rate: `37.19%`;
+- latest tokens seen: `9,076,736`.
+
+Recent windows:
+
+| Window | Hard mean | Soft mean | Hard slope/100 | Soft slope/100 |
+| --- | ---: | ---: | ---: | ---: |
+| last10 | 7.7905 | 4.4343 | -1.2410 | +0.3605 |
+| last25 | 7.7195 | 4.3104 | +0.4049 | +1.2438 |
+| last50 | 7.7396 | 4.3367 | -0.0881 | +0.0723 |
+| last100 | 7.7723 | 4.3652 | -0.1523 | -0.1164 |
+
+Decision: failed runtime attempt and not the requested geometry. It does not update the baseline and produced no checkpoint.
