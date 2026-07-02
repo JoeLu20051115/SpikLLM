@@ -76,3 +76,33 @@ Recent trend windows:
 | loop91b | last200 | 7.2142 | 3.7511 | -0.0697 | -0.1088 |
 
 Interpretation: soft loss is below 5 on both single-GPU runs and hard loss is still above 5. The long-window hard/soft trend remains weakly downward, but these runs are not the requested three-GPU loop14 geometry and cannot replace the queued clean baseline.
+
+## Single-GPU Monitor - 2026-07-02T10:24:56+08:00
+
+The same single-GPU runs remain active on GPUs 0 and 1. Both are still improving on longer windows, but hard loss remains above 5.
+
+Latest local W&B parse:
+
+| Run | Rows | Last step | Hard | Soft | Total | Token acc. | Teacher agree | Tokens seen |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| loop91a | 1,960 | 1,960 | 6.4623 | 2.9015 | 3.2410 | 13.11% | 26.52% | 32,112,640 |
+| loop91b | 1,874 | 1,874 | 6.4577 | 3.0981 | 3.3003 | 11.06% | 19.67% | 30,703,616 |
+
+Recent trend windows:
+
+| Run | Window | Hard mean | Soft mean | Hard slope/100 | Soft slope/100 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| loop91a | last25 | 6.5001 | 2.9932 | +0.4407 | +0.4002 |
+| loop91a | last50 | 6.5443 | 2.9973 | -0.2230 | +0.0119 |
+| loop91a | last100 | 6.5500 | 3.0107 | -0.0488 | -0.0489 |
+| loop91a | last200 | 6.5748 | 3.0411 | -0.0534 | -0.0565 |
+| loop91a | last400 | 6.6305 | 3.0900 | -0.0508 | -0.0486 |
+| loop91a | last800 | 6.6946 | 3.2022 | -0.0390 | -0.0569 |
+| loop91b | last25 | 6.5999 | 3.0789 | -0.0602 | -0.0817 |
+| loop91b | last50 | 6.6137 | 3.0884 | -0.0724 | -0.1174 |
+| loop91b | last100 | 6.6476 | 3.1150 | -0.1244 | -0.0811 |
+| loop91b | last200 | 6.6859 | 3.1410 | -0.0814 | -0.0529 |
+| loop91b | last400 | 6.7181 | 3.1973 | -0.0333 | -0.0591 |
+| loop91b | last800 | 6.8057 | 3.3200 | -0.0454 | -0.0613 |
+
+Interpretation: these single-GPU runs support the current best baseline direction because soft loss is well below 5 and hard loss keeps moving down over 100+ step windows. They still do not satisfy the hard-loss threshold, and they do not replace the queued loop95 three-GPU loop14-geometry run.

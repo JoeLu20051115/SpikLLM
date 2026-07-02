@@ -49,3 +49,27 @@ First watcher check:
 ```
 
 The launcher is active and waiting. It has not started training yet because GPUs 0 and 1 are still occupied.
+
+## Queue Monitor - 2026-07-02T10:24:56+08:00
+
+Loop95 is still queued and has not started `torchrun`.
+
+Current GPU/process state:
+
+| GPU | Memory MiB | Util % | Owner |
+| ---: | ---: | ---: | --- |
+| 0 | 17,223 | 83 | `loop91a-loop16-baseline-seq512-bs2-ga16-gpu0-1bt-20260702-092515` |
+| 1 | 17,223 | 85 | `loop91b-loop16-baseline-seq512-bs2-ga16-gpu1-1bt-20260702-092515` |
+| 2 | 43,397 | 100 | external `python Full_Comparision_NormalizedAtt_Prime.py --gpu 2` |
+
+Latest watcher lines show the guard is working and `idle_count` remains zero:
+
+```text
+2026-07-02T10:19:52+08:00 check=29 mem=[17223 17223 43397 ] util=[81 83 100 ] idle_count=0
+2026-07-02T10:20:52+08:00 check=30 mem=[17223 17223 43397 ] util=[83 86 69 ] idle_count=0
+2026-07-02T10:21:52+08:00 check=31 mem=[17223 17223 43397 ] util=[78 82 81 ] idle_count=0
+2026-07-02T10:22:52+08:00 check=32 mem=[17223 17223 43397 ] util=[84 84 100 ] idle_count=0
+2026-07-02T10:23:53+08:00 check=33 mem=[17223 17223 43397 ] util=[83 82 100 ] idle_count=0
+```
+
+Decision: leave loop95 queued. Do not start a contaminated three-GPU run while any of the requested GPUs are occupied.
