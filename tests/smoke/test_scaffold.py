@@ -8,6 +8,7 @@ from bispikclm.models.bispik_config import BiSpikConfig
 from bispikclm.models.bispik_lm import BiSpikForCausalLM
 from bispikclm.train.eval_lm import main as eval_main
 from bispikclm.train.train_spad import build_training_payload, freeze_teacher
+from bispikclm.train.train_spad import build_ddp_kwargs, should_sync_gradients
 
 
 def test_scaffold_smoke() -> None:
@@ -241,6 +242,22 @@ def test_training_payload_exposes_teacher_and_multilevel_spad_plan() -> None:
     assert serialized["train_loop"]["optimizer"] == "torch.optim.Adam"
     assert serialized["train_loop"]["scheduler"] == "cosine_decay"
     assert "runtime_requirements" in serialized
+
+
+def test_ddp_gradient_accumulation_only_syncs_on_boundary() -> None:
+    assert not should_sync_gradients(batch_index=0, gradient_accumulation_steps=4)
+    assert not should_sync_gradients(batch_index=2, gradient_accumulation_steps=4)
+    assert should_sync_gradients(batch_index=3, gradient_accumulation_steps=4)
+
+
+def test_ddp_kwargs_disable_broadcast_buffers_for_stateful_spiking_modules() -> None:
+    assert build_ddp_kwargs(local_rank=1, use_cuda=True) == {
+        "device_ids": [1],
+        "broadcast_buffers": False,
+    }
+    assert build_ddp_kwargs(local_rank=0, use_cuda=False) == {
+        "broadcast_buffers": False,
+    }
 
 
 def test_spad_five_loss_backward_with_temporal_fusion() -> None:

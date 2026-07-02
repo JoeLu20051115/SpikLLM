@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 import math
 import os
@@ -117,6 +118,26 @@ def resolve_scheduler_steps(train_config: TrainingConfig, world_size: int = 1) -
     if train_config.scheduler_max_steps is not None:
         return max(1, train_config.scheduler_max_steps)
     return resolve_max_steps(train_config, world_size)
+
+
+def build_ddp_kwargs(local_rank: int, use_cuda: bool) -> dict[str, object]:
+    kwargs: dict[str, object] = {"broadcast_buffers": False}
+    if use_cuda:
+        kwargs["device_ids"] = [local_rank]
+    return kwargs
+
+
+def should_sync_gradients(batch_index: int, gradient_accumulation_steps: int) -> bool:
+    return (batch_index + 1) % gradient_accumulation_steps == 0
+
+
+def enter_ddp_no_sync_if_needed(stack: ExitStack, modules: tuple[nn.Module, ...], sync_gradients: bool) -> None:
+    if sync_gradients:
+        return
+    for module in modules:
+        no_sync = getattr(module, "no_sync", None)
+        if no_sync is not None:
+            stack.enter_context(no_sync())
 
 
 def build_training_payload(
@@ -441,7 +462,7 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
     embedding_projector = embedding_projector.to(device)
     hidden_projector = hidden_projector.to(device)
     if distributed:
-        ddp_kwargs = {"device_ids": [local_rank]} if torch.cuda.is_available() else {}
+        ddp_kwargs = build_ddp_kwargs(local_rank=local_rank, use_cuda=torch.cuda.is_available())
         student = torch.nn.parallel.DistributedDataParallel(student, **ddp_kwargs)
         if _has_trainable_parameters(embedding_projector):
             embedding_projector = torch.nn.parallel.DistributedDataParallel(embedding_projector, **ddp_kwargs)
@@ -497,6 +518,7 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
     while step < config.training.max_steps:
         for batch_index, batch in enumerate(dataloader):
             batch = {name: value.to(device) for name, value in batch.items()}
+            sync_gradients = should_sync_gradients(batch_index, config.training.gradient_accumulation_steps)
             with torch.no_grad(), torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
                 teacher_outputs_raw = teacher(
                     input_ids=batch["input_ids"],
@@ -510,28 +532,35 @@ def train(config: ExperimentConfig, resume_from: str | Path | None = None) -> di
                 "attentions": teacher_outputs_raw.attentions,
                 "logits": teacher_outputs_raw.logits,
             }
-            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                student_outputs = student(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    output_hidden_states=True,
-                    output_attentions=True,
-                    return_spike_stats=True,
-                )
-                losses = compute_multilevel_distillation(
-                    student_outputs=student_outputs,
-                    teacher_outputs=teacher_outputs,
-                    config=config.distillation,
-                    labels=batch["labels"],
-                    attention_mask=batch.get("attention_mask"),
-                    embedding_projector=embedding_projector,
-                    hidden_projector=hidden_projector,
-                    spike_threshold=config.model.spike_threshold,
-                    membrane_decay=config.model.membrane_decay,
-                )
-            accumulated_loss_snapshots.append({name: float(value.detach().cpu()) for name, value in losses.items()})
-            (losses["total_loss"] / config.training.gradient_accumulation_steps).backward()
-            if (batch_index + 1) % config.training.gradient_accumulation_steps == 0:
+            with ExitStack() as stack:
+                if distributed:
+                    enter_ddp_no_sync_if_needed(
+                        stack,
+                        (student, embedding_projector, hidden_projector),
+                        sync_gradients=sync_gradients,
+                    )
+                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                    student_outputs = student(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                        output_hidden_states=True,
+                        output_attentions=True,
+                        return_spike_stats=True,
+                    )
+                    losses = compute_multilevel_distillation(
+                        student_outputs=student_outputs,
+                        teacher_outputs=teacher_outputs,
+                        config=config.distillation,
+                        labels=batch["labels"],
+                        attention_mask=batch.get("attention_mask"),
+                        embedding_projector=embedding_projector,
+                        hidden_projector=hidden_projector,
+                        spike_threshold=config.model.spike_threshold,
+                        membrane_decay=config.model.membrane_decay,
+                    )
+                accumulated_loss_snapshots.append({name: float(value.detach().cpu()) for name, value in losses.items()})
+                (losses["total_loss"] / config.training.gradient_accumulation_steps).backward()
+            if sync_gradients:
                 should_log = local_rank == 0 and wandb_run is not None and (step + 1) % config.training.log_interval == 0
                 student_hidden_for_monitoring = None
                 student_hidden_states = student_outputs.get("hidden_states")

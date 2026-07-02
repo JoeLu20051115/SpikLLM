@@ -1,5 +1,9 @@
 .worktrees/
 __pycache__/
 .pytest_cache/
+.superpowers/
+*.egg-info/
 bispikclm/cache/
+logs/
 output/
+wandb/
