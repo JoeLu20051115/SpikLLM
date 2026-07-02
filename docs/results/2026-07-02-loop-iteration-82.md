@@ -78,3 +78,28 @@ Monitor W&B and the local log. Apply the same continuation rule:
 - otherwise stop and record the final state if the trend stalls as in loop14.
 
 No source code was changed for this loop.
+
+## Interim Monitor - Step 14
+
+W&B local file: `wandb/run-20260702_084851-9xwae378/run-9xwae378.wandb`.
+
+At optimizer step 14:
+
+- latest hard/soft: `9.0170 / 5.2207`;
+- latest total loss: `5.0411`;
+- latest token accuracy: `2.30%`;
+- latest teacher top-1 agreement: `2.96%`;
+- latest target rank mean: `5874.1`;
+- latest target margin mean: `-7.1068`;
+- latest spike rate: `62.61%`;
+- latest readout scale: `0.9999`;
+- latest tokens seen: `11,010,048`.
+
+Recent windows:
+
+| Window | Hard mean | Soft mean | Hard slope/100 | Soft slope/100 |
+| --- | ---: | ---: | ---: | ---: |
+| last5 | 9.0582 | 5.4057 | -1.7244 | -13.3123 |
+| last10 | 9.6633 | 5.9857 | -23.8469 | -22.7021 |
+
+Decision: keep loop82 running. It is still too early to stop, and the last10 hard/soft trend is clearly downward. The below-five continuation rule has not been met yet because hard loss remains above 5.
