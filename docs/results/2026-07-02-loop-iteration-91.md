@@ -50,3 +50,29 @@ At first parse:
 | loop91b single-GPU | 20 | 20 | 11.1989 | 7.0685 |
 
 Decision: cancelled resource-conflict attempt. No baseline update. A valid three-GPU baseline still requires all three GPUs to be free at launch and during early monitoring.
+
+## Single-GPU Monitor - 2026-07-02T09:54:58+08:00
+
+The single-GPU runs that caused the resource conflict are still active and blocking a clean three-GPU baseline launch.
+
+Latest local W&B parse:
+
+| Run | Rows | Last step | Hard | Soft | Total | Token acc. | Teacher agree | Tokens seen |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| loop91a | 976 | 976 | 6.8924 | 3.4537 | 3.7319 | 8.90% | 14.38% | 15,990,784 |
+| loop91b | 927 | 927 | 7.1240 | 3.6305 | 3.8672 | 9.10% | 15.36% | 15,187,968 |
+
+Recent trend windows:
+
+| Run | Window | Hard mean | Soft mean | Hard slope/100 | Soft slope/100 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| loop91a | last25 | 7.0463 | 3.5719 | +0.3994 | -0.4027 |
+| loop91a | last50 | 7.0254 | 3.5583 | +0.1419 | +0.0221 |
+| loop91a | last100 | 7.0438 | 3.5570 | -0.0556 | -0.0092 |
+| loop91a | last200 | 7.1002 | 3.6219 | -0.1061 | -0.1123 |
+| loop91b | last25 | 7.1631 | 3.6664 | -1.0403 | -0.6275 |
+| loop91b | last50 | 7.1474 | 3.6514 | -0.0892 | -0.0382 |
+| loop91b | last100 | 7.1801 | 3.6954 | -0.0968 | -0.1420 |
+| loop91b | last200 | 7.2142 | 3.7511 | -0.0697 | -0.1088 |
+
+Interpretation: soft loss is below 5 on both single-GPU runs and hard loss is still above 5. The long-window hard/soft trend remains weakly downward, but these runs are not the requested three-GPU loop14 geometry and cannot replace the queued clean baseline.
