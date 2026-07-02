@@ -34,3 +34,18 @@ This is intended to prevent the resource-conflict pattern seen in loops89 and 91
 - GPU2 is free after loop94 completed.
 
 Decision at record time: queue a guarded three-GPU launch rather than starting immediately. The baseline is unchanged.
+
+## Queued Launcher
+
+- Queued run name: `loop95-loop16-baseline-seq1024-bs4-ga64-3xh200-1bt-queued-20260702-095148`
+- tmux session: `loop95_loop16_baseline_seq1024_bs4_ga64_3xh200_1bt_queued_20260702_095148`
+- Watcher log: `logs/loop95-loop16-baseline-seq1024-bs4-ga64-3xh200-1bt-queued-20260702-095148/watcher.log`
+- Output directory: `output/loop95-loop16-baseline-seq1024-bs4-ga64-3xh200-1bt-queued-20260702-095148`
+
+First watcher check:
+
+```text
+2026-07-02T09:51:48+08:00 check=1 mem=[17223 17223 0 ] util=[89 84 0 ] idle_count=0
+```
+
+The launcher is active and waiting. It has not started training yet because GPUs 0 and 1 are still occupied.
