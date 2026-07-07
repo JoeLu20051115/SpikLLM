@@ -47,7 +47,15 @@ def encode_scored_sequence(tokenizer, prompt: str, choice: str, max_length: int)
     return full_ids, labels
 
 
-def score_choices(model, tokenizer, prompt: str, choices: list[str], max_length: int, device: str) -> list[float]:
+def score_choices(
+    model,
+    tokenizer,
+    prompt: str,
+    choices: list[str],
+    max_length: int,
+    device: str,
+    score_normalization: str,
+) -> list[float]:
     encoded = [encode_scored_sequence(tokenizer, prompt, choice, max_length) for choice in choices]
     batch_max = max(len(input_ids) for input_ids, _ in encoded)
     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
@@ -80,7 +88,9 @@ def score_choices(model, tokenizer, prompt: str, choices: list[str], max_length:
         if not bool(row_mask.any()):
             scores.append(float("-inf"))
         else:
-            scores.append(-float(row_loss.masked_select(row_mask).sum().detach().cpu()))
+            selected = row_loss.masked_select(row_mask)
+            score = selected.mean() if score_normalization == "mean" else selected.sum()
+            scores.append(-float(score.detach().cpu()))
     return scores
 
 
@@ -101,7 +111,15 @@ def load_task_dataset(task_name: str):
         )
 
 
-def evaluate_task(model, tokenizer, task_name: str, limit: int | None, device: str, progress_every: int) -> dict[str, object]:
+def evaluate_task(
+    model,
+    tokenizer,
+    task_name: str,
+    limit: int | None,
+    device: str,
+    progress_every: int,
+    score_normalization: str,
+) -> dict[str, object]:
     task = EVAL_TASKS[task_name]
     dataset = load_task_dataset(task_name)
     max_length = int(model.config.max_position_embeddings)
@@ -111,7 +129,7 @@ def evaluate_task(model, tokenizer, task_name: str, limit: int | None, device: s
         prompt, choices, answer = task.formatter(row)
         if not choices or answer < 0 or answer >= len(choices):
             continue
-        scores = score_choices(model, tokenizer, prompt, choices, max_length, device)
+        scores = score_choices(model, tokenizer, prompt, choices, max_length, device, score_normalization)
         correct += int(max(range(len(scores)), key=scores.__getitem__) == answer)
         total += 1
         if progress_every > 0 and total % progress_every == 0:
@@ -119,6 +137,27 @@ def evaluate_task(model, tokenizer, task_name: str, limit: int | None, device: s
         if limit is not None and total >= limit:
             break
     return {"name": task_name, "correct": correct, "total": total, "accuracy": correct / total if total else 0.0}
+
+
+def parse_score_normalization_by_task(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    mapping: dict[str, str] = {}
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"score normalization override {item!r} must use task=sum|mean")
+        task_name, mode = item.split("=", 1)
+        task_name = task_name.strip()
+        mode = mode.strip()
+        if task_name not in EVAL_TASKS:
+            raise ValueError(f"unknown score normalization task override {task_name!r}")
+        if mode not in {"sum", "mean"}:
+            raise ValueError(f"score normalization for {task_name!r} must be sum or mean")
+        mapping[task_name] = mode
+    return mapping
 
 
 def write_output(path: Path, payload: dict[str, object]) -> None:
@@ -136,6 +175,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output", required=True)
     parser.add_argument("--progress-every", type=int, default=50)
+    parser.add_argument("--score-normalization", choices=("sum", "mean"), default="sum")
+    parser.add_argument("--score-normalization-by-task", default=None)
     args = parser.parse_args()
 
     task_names = [name.strip() for name in args.tasks.split(",") if name.strip()]
@@ -144,16 +185,28 @@ def main() -> int:
         raise ValueError(f"Unknown eval tasks: {unknown}")
 
     model, tokenizer, metadata = load_checkpoint_model(Path(args.checkpoint), args.device)
+    score_normalization_by_task = parse_score_normalization_by_task(args.score_normalization_by_task)
     results = []
     output_path = Path(args.output)
     for task_name in task_names:
-        result = evaluate_task(model, tokenizer, task_name, args.limit, args.device, args.progress_every)
+        task_score_normalization = score_normalization_by_task.get(task_name, args.score_normalization)
+        result = evaluate_task(
+            model,
+            tokenizer,
+            task_name,
+            args.limit,
+            args.device,
+            args.progress_every,
+            task_score_normalization,
+        )
         results.append(result)
         total_correct = sum(int(item["correct"]) for item in results)
         total = sum(int(item["total"]) for item in results)
         payload = {
             **metadata,
             "tasks": results,
+            "score_normalization": args.score_normalization,
+            "score_normalization_by_task": score_normalization_by_task,
             "macro_accuracy": sum(float(item["accuracy"]) for item in results) / len(results),
             "micro_accuracy": total_correct / total if total else 0.0,
         }

@@ -1,0 +1,6 @@
+[submodule "external/SpikeGPT"]
+	path = external/SpikeGPT
+	url = https://github.com/ridgerchu/SpikeGPT.git
+[submodule "external/SpikeLM"]
+	path = external/SpikeLM
+	url = https://github.com/Xingrun-Xing/SpikeLM.git
