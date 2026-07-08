@@ -1,0 +1,21 @@
+{
+  "counts": {
+    "test": 1319,
+    "train": 6973,
+    "validation": 500
+  },
+  "dataset_config": "main",
+  "dataset_name": "openai/gsm8k",
+  "files": {
+    "test": "SpikLLM/data/gsm8k-seed20260708/test.jsonl",
+    "train": "SpikLLM/data/gsm8k-seed20260708/train.jsonl",
+    "validation": "SpikLLM/data/gsm8k-seed20260708/validation.jsonl"
+  },
+  "seed": 20260708,
+  "source_splits": [
+    "train",
+    "test"
+  ],
+  "split_policy": "shuffle official train with fixed seed; first validation_size examples become validation",
+  "validation_size": 500
+}
