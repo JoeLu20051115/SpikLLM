@@ -1,0 +1,170 @@
+{
+  "combined_counts": {
+    "test": 2058,
+    "total": 20528,
+    "train": 14367,
+    "validation": 4103
+  },
+  "files": {
+    "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/test.jsonl",
+    "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/train.jsonl",
+    "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/validation.jsonl"
+  },
+  "ratio": {
+    "test": 0.1,
+    "train": 0.7,
+    "validation": 0.2
+  },
+  "reference_checkpoint_step": 3700,
+  "reference_result": "SpikLLM/.worktrees/loop-opd-sa-topd/output/eval-stdap-steps3600-3700-3800-full8-20260708/step-3700/full-8tasks.json",
+  "seed": 3700,
+  "split_policy": "per-task deterministic shuffle; train=floor(0.7*N), validation=floor(0.2*N), test=remaining",
+  "task_order": [
+    "arc_easy",
+    "arc_challenge",
+    "winogrande",
+    "boolq",
+    "piqa",
+    "hellaswag",
+    "openbookqa",
+    "headqa"
+  ],
+  "tasks": {
+    "arc_challenge": {
+      "counts": {
+        "test": 31,
+        "train": 209,
+        "validation": 59
+      },
+      "dataset": "allenai/ai2_arc",
+      "dataset_config": "ARC-Challenge",
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_challenge/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_challenge/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_challenge/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 299
+    },
+    "arc_easy": {
+      "counts": {
+        "test": 57,
+        "train": 399,
+        "validation": 114
+      },
+      "dataset": "allenai/ai2_arc",
+      "dataset_config": "ARC-Easy",
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_easy/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_easy/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/arc_easy/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 570
+    },
+    "boolq": {
+      "counts": {
+        "test": 327,
+        "train": 2289,
+        "validation": 654
+      },
+      "dataset": "google/boolq",
+      "dataset_config": null,
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/boolq/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/boolq/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/boolq/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 3270
+    },
+    "headqa": {
+      "counts": {
+        "test": 275,
+        "train": 1919,
+        "validation": 548
+      },
+      "dataset": "dvilares/head_qa",
+      "dataset_config": "en",
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/headqa/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/headqa/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/headqa/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "test",
+      "total": 2742
+    },
+    "hellaswag": {
+      "counts": {
+        "test": 1005,
+        "train": 7029,
+        "validation": 2008
+      },
+      "dataset": "Rowan/hellaswag",
+      "dataset_config": null,
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/hellaswag/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/hellaswag/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/hellaswag/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 10042
+    },
+    "openbookqa": {
+      "counts": {
+        "test": 50,
+        "train": 350,
+        "validation": 100
+      },
+      "dataset": "allenai/openbookqa",
+      "dataset_config": "main",
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/openbookqa/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/openbookqa/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/openbookqa/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 500
+    },
+    "piqa": {
+      "counts": {
+        "test": 185,
+        "train": 1286,
+        "validation": 367
+      },
+      "dataset": "ybisk/piqa",
+      "dataset_config": null,
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/piqa/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/piqa/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/piqa/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 1838
+    },
+    "winogrande": {
+      "counts": {
+        "test": 128,
+        "train": 886,
+        "validation": 253
+      },
+      "dataset": "allenai/winogrande",
+      "dataset_config": "winogrande_xl",
+      "files": {
+        "test": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/winogrande/test.jsonl",
+        "train": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/winogrande/train.jsonl",
+        "validation": "SpikLLM/data/eval8-step3700-seed3700-7-2-1/winogrande/validation.jsonl"
+      },
+      "skipped": 0,
+      "source_split": "validation",
+      "total": 1267
+    }
+  }
+}
